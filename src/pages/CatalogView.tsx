@@ -1,0 +1,116 @@
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { ipc, type ModelInfo, type HardwareInfo } from "../lib/ipc";
+
+function formatSize(bytes: number): string {
+  if (bytes === 0) return "—";
+  if (bytes < 1 << 30) return `${(bytes / (1 << 20)).toFixed(0)} Mo`;
+  return `${(bytes / (1 << 30)).toFixed(1)} Go`;
+}
+
+export function CatalogView() {
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [hw, setHw] = useState<HardwareInfo | null>(null);
+  const [filter, setFilter] = useState("");
+
+  useEffect(() => {
+    ipc.modelCatalogList().then(setModels).catch(() => null);
+    invoke<HardwareInfo>("hardware_get").then(setHw).catch(() => null);
+  }, []);
+
+  const lower = filter.trim().toLowerCase();
+  const filtered = lower
+    ? models.filter(
+        (m) =>
+          m.name.toLowerCase().includes(lower) ||
+          m.id.toLowerCase().includes(lower) ||
+          m.license.toLowerCase().includes(lower),
+      )
+    : models;
+
+  return (
+    <div className="flex flex-1 flex-col overflow-hidden">
+      <header className="flex items-center gap-3 border-b border-border px-4 py-2 text-xs text-muted">
+        <span className="font-semibold text-fg">Catalogue de modèles</span>
+        <span>·</span>
+        <span>{filtered.length} / {models.length} modèles</span>
+        {hw && (
+          <>
+            <span>·</span>
+            <span>
+              {hw.totalRamGb} Go RAM
+              {hw.vramGb > 0 && ` + ${hw.vramGb} Go VRAM`}
+            </span>
+          </>
+        )}
+        <input
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filtrer (nom, id, licence)…"
+          className="ml-auto w-64 rounded border border-border bg-bg px-2 py-1 text-xs"
+        />
+      </header>
+
+      <div className="flex-1 overflow-y-auto">
+        <table className="w-full text-left text-xs">
+          <thead className="sticky top-0 bg-bg text-muted">
+            <tr>
+              <th className="px-4 py-2 font-medium">Nom</th>
+              <th className="px-2 py-2 font-medium">Quant.</th>
+              <th className="px-2 py-2 font-medium">Taille</th>
+              <th className="px-2 py-2 font-medium">RAM min</th>
+              <th className="px-2 py-2 font-medium">Licence</th>
+              <th className="px-2 py-2 font-medium">Ollama</th>
+              <th className="px-4 py-2 font-medium text-right">Éligibilité</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((m) => (
+              <Row key={m.id} m={m} hw={hw} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function Row({ m, hw }: { m: ModelInfo; hw: HardwareInfo | null }) {
+  // Heuristique locale identique à hardware::detect().can_run_model pour
+  // un affichage immédiat (sinon on attendrait la promise IPC par ligne).
+  const vramGb = hw?.vramGb ?? 0;
+  const relaxed = vramGb > 0 && vramGb >= m.ramMinGb;
+  const requiredRelaxed = relaxed ? Math.max(0, m.ramMinGb - 1) : m.ramMinGb + 1;
+  const eligible = hw ? hw.totalRamGb >= requiredRelaxed : false;
+
+  return (
+    <tr className="border-t border-border/60 hover:bg-border/20">
+      <td className="px-4 py-2">
+        <div className="font-medium text-fg">{m.name}</div>
+        <div className="text-muted">{m.id}</div>
+      </td>
+      <td className="px-2 py-2 text-muted">{m.quantization}</td>
+      <td className="px-2 py-2 text-muted">{formatSize(m.sizeBytes)}</td>
+      <td className="px-2 py-2 text-muted">{m.ramMinGb} Go</td>
+      <td className="px-2 py-2 text-muted">{m.license}</td>
+      <td className="px-2 py-2">
+        {m.ollamaTag ? (
+          <code className="rounded bg-border/40 px-1.5 py-0.5 text-accent">{m.ollamaTag}</code>
+        ) : (
+          <span className="text-muted">—</span>
+        )}
+      </td>
+      <td className="px-4 py-2 text-right">
+        {hw ? (
+          eligible ? (
+            <span className="rounded bg-green-500/10 px-2 py-0.5 text-green-400">OK</span>
+          ) : (
+            <span className="rounded bg-red-500/10 px-2 py-0.5 text-red-400">RAM insuff.</span>
+          )
+        ) : (
+          <span className="text-muted">?</span>
+        )}
+      </td>
+    </tr>
+  );
+}

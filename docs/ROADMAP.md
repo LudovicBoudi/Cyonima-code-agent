@@ -19,7 +19,20 @@ Les jalons sont prévus pour être livrés dans l'ordre. Chacun a des critères 
 - IPC `session_create` / `session_send` / `session_cancel` / `session_fork` / `session_list`  ✅
 - UI : formulaire "Nouvelle session", chat input + bouton Stop, stream display, listeners d'events  ✅
 - **DoD J1** : chat token-by-token fonctionne via Ollama local (cf README).
-- **J1.5 (suite)** : câbler `LlamaCppProvider` via candle (`candle-core` + `candle-transformers::models::quantized_*`) pour le mode 100% offline, validé contre un vrai GGUF.
+
+## J1.5 — Détection VRAM GPU + catalogue réel  ✅
+- Module `hardware/vram.rs` :
+  - **Windows DXGI** `EnumAdapters1` + `DedicatedVideoMemory` (corrige le bug Win32_VideoController > 4 Go)
+  - **Linux sysfs** `/sys/class/drm/card*/device/mem_info_vram_total` (amdgpu)
+  - **macOS** `system_profiler SPDisplaysDataType`
+- `HardwareInfo` étendu (`vram_bytes`, `vram_gb`)
+- `can_run_model` **relaxe** le seuil RAM si le modèle tient entièrement en VRAM
+- Vérifié sur i9-13900K + Arc A770 16 Go : VRAM correctement détectée (16 GiB), garde-fou OK
+- **Parser catalogue** `docs/models-catalog.toml` embarqué via `include_str!` (compile-time, 0 IO)
+- IPC `model_catalog_list` + UI Catalogue avec badges "OK / RAM insuff." + tags Ollama
+- Gemma 4 (E2B/E4B/12B/26B-A4B/31B) ajoutés avec licences **Apache-2.0** + tags `gemma4:*` Ollama
+- Tests Rust : 3 (catalogue non vide, IDs uniques, Gemma 4 Apache + tag Ollama, import_custom reject)
+- **J1.5 suite (candle built-in)** : reporté au jalon qui permette un test réel contre un GGUF (J4 downloader). On ne livre pas candle au doigt mouillé.
 
 ## J2 — Multi-session
 - `SessionManager` : pool, fork, persistance SQLite
@@ -35,12 +48,10 @@ Les jalons sont prévus pour être livrés dans l'ordre. Chacun a des critères 
 - **DoD** : l'agent peut modifier un fichier du workspace après approbation.
 
 ## J4 — Modèles distants (catalogue + downloader)
-- **Garde-fou hardware** : module `hardware/` détecte RAM totale / CPU / OS / arch via `sysinfo`. La commande `model_download` refuse immédiatement si `ram_min_gb` du modèle dépasse la RAM totale - 1 Go (marge OS). L'UI peut aussi griser le bouton via `hardware_can_run_model`.
-- Parser `docs/models-catalog.toml`
-- Parser `docs/models-catalog.toml`
-- Downloader async (HTTP range, SHA256, reprise, pause, cancel)
-- UI catalogue + barre de progression
-- Vérification d'espace disque
+- **Garde-fou hardware** : module `hardware/` détecte RAM totale / CPU / OS / arch via `sysinfo`, **VRAM GPU dédiée** (DXGI sur Windows, sysfs sur Linux, system_profiler sur macOS). Relaxation de `can_run_model` quand le modèle tient en VRAM. ✅ (J1.5)
+- **Parser catalogue TOML embarqué** (`docs/models-catalog.toml` via `include_str!`), exposition IPC `model_catalog_list` + UI Catalogue avec badges éligibilité et tags Ollama. ✅ (J1.5)
+- ⏳ Downloader async (HTTP range + SHA256 + reprise + pause) + événements `model:download:progress`
+- ⏳ UI progression téléchargement + vérif espace disque
 - **DoD** : téléchargement Qwen2.5-Coder-7B Q4 depuis HuggingFace depuis l'UI.
 
 ## J5 — Import modèles entreprise

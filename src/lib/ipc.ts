@@ -28,6 +28,8 @@ export interface ModelInfo {
   license: string;
   ramMinGb: number;
   installed: boolean;
+  ollamaTag?: string;
+  url?: string;
 }
 
 export interface DownloadProgress {
@@ -43,6 +45,7 @@ export interface HardwareInfo {
   os: string;
   arch: string;
   vramBytes: number | null;
+  vramGb: number;
 }
 
 // ===== Commands =====

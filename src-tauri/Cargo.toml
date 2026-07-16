@@ -47,6 +47,15 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "linux-
 # Détection hardware pour valider l'éligibilité d'un modèle avant download
 sysinfo = { version = "0.32", default-features = false, features = ["system"] }
 
+# Détection VRAM GPU (Win32 DXGI). Le windows crate est déjà transitif via
+# tauri — on l'ajoute explicitement pour activer la feature.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+] }
+
 [features]
 # Par défaut on compile avec le backend llama.cpp built-in.
 default = ["llama-cpp"]

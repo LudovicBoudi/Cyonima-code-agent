@@ -13,11 +13,23 @@ export function NewSessionForm({
   const [workspace, setWorkspace] = useState(".");
   const [modelId, setModelId] = useState("llama3.2");
   const [providerId, setProviderId] = useState<ProviderId>("ollama");
-  const [hwInfo, setHwInfo] = useState<{ total_ram_gb: number; cpu_cores: number; os: string } | null>(null);
+  const [hwInfo, setHwInfo] = useState<{
+    total_ram_gb: number;
+    cpu_cores: number;
+    os: string;
+    vram_gb: number;
+    vram_bytes: number | null;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    invoke<{ total_ram_gb: number; cpu_cores: number; os: string }>("hardware_get")
+    invoke<{
+      total_ram_gb: number;
+      cpu_cores: number;
+      os: string;
+      vram_gb: number;
+      vram_bytes: number | null;
+    }>("hardware_get")
       .then(setHwInfo)
       .catch(() => null);
   }, []);
@@ -36,6 +48,7 @@ export function NewSessionForm({
         {hwInfo && (
           <p className="mb-4 text-xs text-muted">
             Hôte : {hwInfo.os}, {hwInfo.cpu_cores} cœurs, {hwInfo.total_ram_gb} Go RAM
+            {hwInfo.vram_gb > 0 && ` + ${hwInfo.vram_gb} Go VRAM`}
           </p>
         )}
 

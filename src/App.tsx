@@ -1,11 +1,18 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { SessionsView } from "./pages/SessionsView";
+import { CatalogView } from "./pages/CatalogView";
 import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { useSessionsStore } from "./store/sessions";
 import { onSessionToken, onSessionDone, onSessionError } from "./lib/ipc";
 
+type View = "sessions" | "catalog";
+
 export default function App() {
+  const [view, setView] = useState<View>("sessions");
+  const creating = useSessionsStore((s) => s.creating);
+  const activeSessionId = useSessionsStore((s) => s.activeSessionId);
+
   const appendToken = useSessionsStore((s) => s.appendToken);
   const setStreaming = useSessionsStore((s) => s.setStreaming);
   const setError = useSessionsStore((s) => s.setError);
@@ -29,12 +36,18 @@ export default function App() {
     return () => unlistens.forEach((u) => u());
   }, [appendToken, setStreaming, setError]);
 
+  // Si l'utilisateur démarre la création d'une session, on bascule la vue
+  // sessions pour afficher le formulaire.
+  useEffect(() => {
+    if (creating || activeSessionId) setView("sessions");
+  }, [creating, activeSessionId]);
+
   return (
     <div className="flex h-screen flex-col">
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
+        <Sidebar view={view} onView={setView} />
         <main className="flex flex-1 flex-col overflow-hidden">
-          <SessionsView />
+          {view === "sessions" ? <SessionsView /> : <CatalogView />}
         </main>
       </div>
       <StatusBar />

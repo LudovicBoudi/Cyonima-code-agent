@@ -140,25 +140,68 @@ quantization = "Q5_K_M"
 license = "Gemma Terms (Acceptable Use Policy)"
 ram_min_gb = 24
 
-# Gemma 4 — pas encore released par Google au moment de l'écriture de ce
-# catalogue. Sera ajouté dès disponibilité des GGUF officiels. Placeholder
-# gardé pour pré-réserver les IDs :
-#
-# [[models]]
-# id = "gemma-4-9b-it-q4_k_m"
-# name = "Gemma 4 9B IT (Q4_K_M)"
-# url = "TODO_gemma4"
-# sha256 = "TODO"
-# license = "Gemma Terms"
-# ram_min_gb = 12
-#
-# [[models]]
-# id = "gemma-4-27b-it-q4_k_m"
-# name = "Gemma 4 27B IT (Q4_K_M)"
-# url = "TODO_gemma4"
-# sha256 = "TODO"
-# license = "Gemma Terms"
-# ram_min_gb = 20
+# ============================================================
+# Gemma 4 — famille complète QAT (Apache-2.0 !)
+#   Multimodal texte + image (+ audio pour E2B/E4B), 128K-256K context,
+#   native function-calling, system prompt support.
+#   Source GGUF HuggingFace : lmstudio-community/...-QAT-GGUF
+#   Source Ollama           : https://ollama.com/library/gemma4
+# ============================================================
+
+[[models]]
+id = "gemma-4-e2b-it-qat-q4_0"
+name = "Gemma 4 E2B IT QAT (Q4_0) — edge 2.3B, vision+audio"
+url = "https://huggingface.co/lmstudio-community/gemma-4-E2B-it-QAT-GGUF/resolve/main/gemma-4-E2B-it-QAT-Q4_0.gguf"
+sha256 = "TODO_J4"
+size_bytes = 3_596_989_440
+quantization = "Q4_0"
+license = "Apache-2.0 (Gemma 4)"
+ram_min_gb = 4
+ollama_tag = "gemma4:e2b"
+
+[[models]]
+id = "gemma-4-e4b-it-qat-q4_0"
+name = "Gemma 4 E4B IT QAT (Q4_0) — edge 4.5B, vision+audio"
+url = "https://huggingface.co/lmstudio-community/gemma-4-E4B-it-QAT-GGUF/resolve/main/gemma-4-E4B-it-QAT-Q4_0.gguf"
+sha256 = "TODO_J4"
+size_bytes = 5_530_930_176
+quantization = "Q4_0"
+license = "Apache-2.0 (Gemma 4)"
+ram_min_gb = 6
+ollama_tag = "gemma4:e4b"
+
+[[models]]
+id = "gemma-4-12b-it-qat-q4_0"
+name = "Gemma 4 12B IT QAT (Q4_0) — reasoning+code, vision"
+url = "https://huggingface.co/lmstudio-community/gemma-4-12B-it-QAT-GGUF/resolve/main/gemma-4-12B-it-QAT-Q4_0.gguf"
+sha256 = "TODO_J4"
+size_bytes = 7_497_398_272
+quantization = "Q4_0"
+license = "Apache-2.0 (Gemma 4)"
+ram_min_gb = 8
+ollama_tag = "gemma4:12b"
+
+[[models]]
+id = "gemma-4-26b-a4b-it-qat-q4_0"
+name = "Gemma 4 26B A4B IT QAT (Q4_0) — MoE 4B actifs, vision"
+url = "https://huggingface.co/lmstudio-community/gemma-4-26B-A4B-it-QAT-GGUF/resolve/main/gemma-4-26B-A4B-it-QAT-Q4_0.gguf"
+sha256 = "TODO_J4"
+size_bytes = 15_466_582_016
+quantization = "Q4_0"
+license = "Apache-2.0 (Gemma 4)"
+ram_min_gb = 16
+ollama_tag = "gemma4:26b"
+
+[[models]]
+id = "gemma-4-31b-it-qat-q4_0"
+name = "Gemma 4 31B IT QAT (Q4_0) — dense, frontier reasoning+code"
+url = "https://huggingface.co/lmstudio-community/gemma-4-31B-it-QAT-GGUF/resolve/main/gemma-4-31B-it-QAT-Q4_0.gguf"
+sha256 = "TODO_J4"
+size_bytes = 19_008_790_528
+quantization = "Q4_0"
+license = "Apache-2.0 (Gemma 4)"
+ram_min_gb = 21
+ollama_tag = "gemma4:31b"
 
 # ============================================================
 # Code spécialisés — 7B à 32B
