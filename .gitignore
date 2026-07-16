@@ -1,0 +1,54 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+dist-ssr/
+build/
+src-tauri/target/
+src-tauri/gen/
+
+# tsc -b artifacts
+*.tsbuildinfo
+vite.config.d.ts
+vite.config.js
+
+# Tauri
+src-tauri/WixTools/
+src-tauri/.cargo/
+
+# Runtime data
+*.local
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Models runtime data (ne pas committer les GGUF > 50 Mo)
+# Le placeholder embedder < 50 Mo reste committé dans src-tauri/resources/
+src-tauri/resources/models/*.gguf
+!src-tauri/resources/models/.gitkeep
+src-tauri/resources/models/cache/

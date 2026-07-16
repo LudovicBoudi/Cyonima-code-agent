@@ -1,0 +1,3 @@
+# Placeholder — les GGUF > 50 Mo ne sont jamais committés.
+# Le downloader `src-tauri/src/models/` écrit les fichiers ici (configurable
+# via `~/.cyonima/config.toml`).
