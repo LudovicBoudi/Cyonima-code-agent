@@ -5,22 +5,25 @@
 #   name         : libellé affiché
 #   url          : URL HTTP du GGUF (HuggingFace, OLLibrary, miroir GitHub Releases)
 #   sha256       : checksum attendu post-download
-#   size_bytes   : taille du fichier GGUF
+#   size_bytes   : taille du fichier GGUF (0 si non vérifié)
 #   quantization : Q4_K_M / Q5_K_M / Q8_0 / F16 ...
 #   license      : licence courte affichée avant téléchargement
-#   ram_min_gb   : RAM minimum recommandée pour l'inférence
+#   ram_min_gb   : RAM minimum recommandée pour l'inférence (CPU pur)
+#                  NB: si GPU est détecté (VRAM ≥ taille modèle), une bonne
+#                  partie des poids vont en VRAM et la ram_min_gb peut être
+#                  réduite. Câblage VRAM prévu en J1.5/J8.
+#
+# Cibles hardware de base (référence entreprise attendue ≥):
+#   - Entry    : 8 Go RAM, no VRAM     → modèles 1.5B-3B Q4
+#   - Mid      : 16 Go RAM, 8 Go VRAM  → modèles 7B-12B Q4/Q5
+#   - High     : 32 Go RAM, 16 Go VRAM  → modèles 12B-27B Q4, 70B Q2/Q3 (lent)
+#   - Server   : 64+ Go RAM, 24+ Go VRAM → 70B Q4/Q5, 405B Q2 (très lent)
 #
 # Ne jamais committer de GGUF > 50 Mo dans ce repo ; tout passe par download.
 
-[[models]]
-id = "qwen2.5-coder-7b-instruct-q4_k_m"
-name = "Qwen 2.5 Coder 7B Instruct (Q4_K_M)"
-url = "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/qwen2-5-coder-7b-instruct-q4_k_m.gguf"
-sha256 = "TODO_J4"
-size_bytes = 0
-quantization = "Q4_K_M"
-license = "Apache-2.0 (Qwen)"
-ram_min_gb = 8
+# ============================================================
+# Entry-level (1.5B-3B Q4) — 2-4 Go RAM, démarrage rapide
+# ============================================================
 
 [[models]]
 id = "qwen2.5-3b-instruct-q4_k_m"
@@ -43,6 +46,21 @@ license = "MIT (DeepSeek distill)"
 ram_min_gb = 2
 
 [[models]]
+id = "llama-3.2-3b-instruct-q4_k_m"
+name = "Llama 3.2 3B Instruct (Q4_K_M)"
+url = "https://huggingface.co/lmstudio-community/Meta-Llama-3.2-3B-Instruct-GGUF/resolve/main/Meta-Llama-3.2-3B-Instruct-Q4_K_M.gguf"
+sha256 = "TODO_J4"
+size_bytes = 0
+quantization = "Q4_K_M"
+license = "Llama Community License"
+ram_min_gb = 4
+
+# ============================================================
+# Gemma 3 — famille complète (4B / 12B / 27B, vision+texte)
+# Toutes sous Gemma Terms (Acceptable Use Policy)
+# ============================================================
+
+[[models]]
 id = "gemma-3-4b-it-q4_k_m"
 name = "Gemma 3 4B IT (Q4_K_M)"
 url = "https://huggingface.co/lmstudio-community/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf"
@@ -53,14 +71,186 @@ license = "Gemma Terms (Acceptable Use Policy)"
 ram_min_gb = 6
 
 [[models]]
-id = "llama-3.2-3b-instruct-q4_k_m"
-name = "Llama 3.2 3B Instruct (Q4_K_M)"
-url = "https://huggingface.co/lmstudio-community/Meta-Llama-3.2-3B-Instruct-GGUF/resolve/main/Meta-Llama-3.2-3B-Instruct-Q4_K_M.gguf"
+id = "gemma-3-4b-it-q5_k_m"
+name = "Gemma 3 4B IT (Q5_K_M) — qualité supérieure"
+url = "https://huggingface.co/lmstudio-community/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q5_K_M.gguf"
+sha256 = "TODO_J4"
+size_bytes = 0
+quantization = "Q5_K_M"
+license = "Gemma Terms (Acceptable Use Policy)"
+ram_min_gb = 6
+
+[[models]]
+id = "gemma-3-4b-it-q8_0"
+name = "Gemma 3 4B IT (Q8_0) — haute fidélité"
+url = "https://huggingface.co/lmstudio-community/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q8_0.gguf"
+sha256 = "TODO_J4"
+size_bytes = 0
+quantization = "Q8_0"
+license = "Gemma Terms (Acceptable Use Policy)"
+ram_min_gb = 8
+
+[[models]]
+id = "gemma-3-12b-it-q4_k_m"
+name = "Gemma 3 12B IT (Q4_K_M)"
+url = "https://huggingface.co/lmstudio-community/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q4_K_M.gguf"
+sha256 = "TODO_J4"
+size_bytes = 0
+quantization = "Q4_K_M"
+license = "Gemma Terms (Acceptable Use Policy)"
+ram_min_gb = 12
+
+[[models]]
+id = "gemma-3-12b-it-q5_k_m"
+name = "Gemma 3 12B IT (Q5_K_M)"
+url = "https://huggingface.co/lmstudio-community/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q5_K_M.gguf"
+sha256 = "TODO_J4"
+size_bytes = 0
+quantization = "Q5_K_M"
+license = "Gemma Terms (Acceptable Use Policy)"
+ram_min_gb = 14
+
+[[models]]
+id = "gemma-3-12b-it-q8_0"
+name = "Gemma 3 12B IT (Q8_0)"
+url = "https://huggingface.co/lmstudio-community/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q8_0.gguf"
+sha256 = "TODO_J4"
+size_bytes = 0
+quantization = "Q8_0"
+license = "Gemma Terms (Acceptable Use Policy)"
+ram_min_gb = 16
+
+[[models]]
+id = "gemma-3-27b-it-q4_k_m"
+name = "Gemma 3 27B IT (Q4_K_M)"
+url = "https://huggingface.co/lmstudio-community/gemma-3-27b-it-GGUF/resolve/main/gemma-3-27b-it-Q4_K_M.gguf"
+sha256 = "TODO_J4"
+size_bytes = 0
+quantization = "Q4_K_M"
+license = "Gemma Terms (Acceptable Use Policy)"
+ram_min_gb = 20
+
+[[models]]
+id = "gemma-3-27b-it-q5_k_m"
+name = "Gemma 3 27B IT (Q5_K_M)"
+url = "https://huggingface.co/lmstudio-community/gemma-3-27b-it-GGUF/resolve/main/gemma-3-27b-it-Q5_K_M.gguf"
+sha256 = "TODO_J4"
+size_bytes = 0
+quantization = "Q5_K_M"
+license = "Gemma Terms (Acceptable Use Policy)"
+ram_min_gb = 24
+
+# Gemma 4 — pas encore released par Google au moment de l'écriture de ce
+# catalogue. Sera ajouté dès disponibilité des GGUF officiels. Placeholder
+# gardé pour pré-réserver les IDs :
+#
+# [[models]]
+# id = "gemma-4-9b-it-q4_k_m"
+# name = "Gemma 4 9B IT (Q4_K_M)"
+# url = "TODO_gemma4"
+# sha256 = "TODO"
+# license = "Gemma Terms"
+# ram_min_gb = 12
+#
+# [[models]]
+# id = "gemma-4-27b-it-q4_k_m"
+# name = "Gemma 4 27B IT (Q4_K_M)"
+# url = "TODO_gemma4"
+# sha256 = "TODO"
+# license = "Gemma Terms"
+# ram_min_gb = 20
+
+# ============================================================
+# Code spécialisés — 7B à 32B
+# ============================================================
+
+[[models]]
+id = "qwen2.5-coder-7b-instruct-q4_k_m"
+name = "Qwen 2.5 Coder 7B Instruct (Q4_K_M)"
+url = "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/qwen2-5-coder-7b-instruct-q4_k_m.gguf"
+sha256 = "TODO_J4"
+size_bytes = 0
+quantization = "Q4_K_M"
+license = "Apache-2.0 (Qwen)"
+ram_min_gb = 8
+
+[[models]]
+id = "qwen2.5-coder-14b-instruct-q4_k_m"
+name = "Qwen 2.5 Coder 14B Instruct (Q4_K_M)"
+url = "https://huggingface.co/Qwen/Qwen2.5-Coder-14B-Instruct-GGUF/resolve/main/qwen2-5-coder-14b-instruct-q4_k_m.gguf"
+sha256 = "TODO_J4"
+size_bytes = 0
+quantization = "Q4_K_M"
+license = "Apache-2.0 (Qwen)"
+ram_min_gb = 12
+
+[[models]]
+id = "qwen2.5-coder-32b-instruct-q4_k_m"
+name = "Qwen 2.5 Coder 32B Instruct (Q4_K_M)"
+url = "https://huggingface.co/Qwen/Qwen2.5-Coder-32B-Instruct-GGUF/resolve/main/qwen2-5-coder-32b-instruct-q4_k_m.gguf"
+sha256 = "TODO_J4"
+size_bytes = 0
+quantization = "Q4_K_M"
+license = "Apache-2.0 (Qwen)"
+ram_min_gb = 24
+
+# ============================================================
+# Reasoning (DeepSeek R1 distillations) — 1.5B à 32B
+# ============================================================
+
+[[models]]
+id = "deepseek-r1-distill-llama-8b-q4_k_m"
+name = "DeepSeek R1 Distill Llama 8B (Q4_K_M)"
+url = "https://huggingface.co/unsloth/DeepSeek-R1-Distill-Llama-8B-GGUF/resolve/main/DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf"
+sha256 = "TODO_J4"
+size_bytes = 0
+quantization = "Q4_K_M"
+license = "MIT (DeepSeek distill)"
+ram_min_gb = 8
+
+[[models]]
+id = "deepseek-r1-distill-qwen-14b-q4_k_m"
+name = "DeepSeek R1 Distill Qwen 14B (Q4_K_M)"
+url = "https://huggingface.co/unsloth/DeepSeek-R1-Distill-Qwen-14B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-14B-Q4_K_M.gguf"
+sha256 = "TODO_J4"
+size_bytes = 0
+quantization = "Q4_K_M"
+license = "MIT (DeepSeek distill)"
+ram_min_gb = 12
+
+[[models]]
+id = "deepseek-r1-distill-qwen-32b-q4_k_m"
+name = "DeepSeek R1 Distill Qwen 32B (Q4_K_M)"
+url = "https://huggingface.co/unsloth/DeepSeek-R1-Distill-Qwen-32B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-32B-Q4_K_M.gguf"
+sha256 = "TODO_J4"
+size_bytes = 0
+quantization = "Q4_K_M"
+license = "MIT (DeepSeek distill)"
+ram_min_gb = 24
+
+# ============================================================
+# Généralistes Llama / Mistral / Phi / Qwen — 7B à 14B
+# ============================================================
+
+[[models]]
+id = "llama-3.1-8b-instruct-q4_k_m"
+name = "Llama 3.1 8B Instruct (Q4_K_M)"
+url = "https://huggingface.co/lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf"
 sha256 = "TODO_J4"
 size_bytes = 0
 quantization = "Q4_K_M"
 license = "Llama Community License"
-ram_min_gb = 4
+ram_min_gb = 8
+
+[[models]]
+id = "llama-3.1-8b-instruct-q8_0"
+name = "Llama 3.1 8B Instruct (Q8_0) — haute fidélité"
+url = "https://huggingface.co/lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q8_0.gguf"
+sha256 = "TODO_J4"
+size_bytes = 0
+quantization = "Q8_0"
+license = "Llama Community License"
+ram_min_gb = 12
 
 [[models]]
 id = "mistral-7b-instruct-v0.3-q4_k_m"
@@ -73,6 +263,16 @@ license = "Apache-2.0 (Mistral)"
 ram_min_gb = 8
 
 [[models]]
+id = "mistral-nemo-12b-instruct-q4_k_m"
+name = "Mistral Nemo 12B Instruct (Q4_K_M) — long 128K context"
+url = "https://huggingface.co/lmstudio-community/Mistral-Nemo-Instruct-2407-GGUF/resolve/main/Mistral-Nemo-Instruct-2407-Q4_K_M.gguf"
+sha256 = "TODO_J4"
+size_bytes = 0
+quantization = "Q4_K_M"
+license = "Apache-2.0 (Mistral)"
+ram_min_gb = 12
+
+[[models]]
 id = "phi-4-14b-instruct-q4_k_m"
 name = "Phi-4 14B Instruct (Q4_K_M)"
 url = "https://huggingface.co/unsloth/phi-4-GGUF/resolve/main/phi-4-Q4_K_M.gguf"
@@ -80,9 +280,42 @@ sha256 = "TODO_J4"
 size_bytes = 0
 quantization = "Q4_K_M"
 license = "MIT (Microsoft Phi-4)"
-ram_min_gb = 16
+ram_min_gb = 12
 
-# Modèles multimodal (vision + texte) — jalon J6+
+[[models]]
+id = "phi-4-14b-instruct-q8_0"
+name = "Phi-4 14B Instruct (Q8_0)"
+url = "https://huggingface.co/unsloth/phi-4-GGUF/resolve/main/phi-4-Q8_0.gguf"
+sha256 = "TODO_J4"
+size_bytes = 0
+quantization = "Q8_0"
+license = "MIT (Microsoft Phi-4)"
+ram_min_gb = 18
+
+[[models]]
+id = "qwen2.5-14b-instruct-q4_k_m"
+name = "Qwen 2.5 14B Instruct (Q4_K_M)"
+url = "https://huggingface.co/Qwen/Qwen2.5-14B-Instruct-GGUF/resolve/main/qwen2.5-14b-instruct-q4_k_m.gguf"
+sha256 = "TODO_J4"
+size_bytes = 0
+quantization = "Q4_K_M"
+license = "Apache-2.0 (Qwen)"
+ram_min_gb = 12
+
+[[models]]
+id = "qwen2.5-32b-instruct-q4_k_m"
+name = "Qwen 2.5 32B Instruct (Q4_K_M)"
+url = "https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF/resolve/main/qwen2.5-32b-instruct-q4_k_m.gguf"
+sha256 = "TODO_J4"
+size_bytes = 0
+quantization = "Q4_K_M"
+license = "Apache-2.0 (Qwen)"
+ram_min_gb = 24
+
+# ============================================================
+# Multimodal (vision + texte) — Qwen 2.5 VL / Gemma 3 déjà listé (vision)
+# ============================================================
+
 [[models]]
 id = "qwen2.5-vl-3b-instruct-q4_k_m"
 name = "Qwen 2.5 VL 3B Instruct (Q4_K_M)"
@@ -93,8 +326,54 @@ quantization = "Q4_K_M"
 license = "Apache-2.0 (Qwen)"
 ram_min_gb = 6
 
-# Embedder — alternative à l'embedder embarqué dans le repo (idem modèle mais
-# téléchargeable si l'utilisateur veut une autre dim que celle bundled).
+[[models]]
+id = "qwen2.5-vl-7b-instruct-q4_k_m"
+name = "Qwen 2.5 VL 7B Instruct (Q4_K_M)"
+url = "https://huggingface.co/lmstudio-community/Qwen2.5-VL-7B-Instruct-GGUF/resolve/main/Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf"
+sha256 = "TODO_J4"
+size_bytes = 0
+quantization = "Q4_K_M"
+license = "Apache-2.0 (Qwen)"
+ram_min_gb = 8
+
+[[models]]
+id = "qwen2.5-vl-32b-instruct-q4_k_m"
+name = "Qwen 2.5 VL 32B Instruct (Q4_K_M)"
+url = "https://huggingface.co/lmstudio-community/Qwen2.5-VL-32B-Instruct-GGUF/resolve/main/Qwen2.5-VL-32B-Instruct-Q4_K_M.gguf"
+sha256 = "TODO_J4"
+size_bytes = 0
+quantization = "Q4_K_M"
+license = "Apache-2.0 (Qwen)"
+ram_min_gb = 24
+
+# ============================================================
+# High-end — 70B (requiert 32+ Go RAM et idéalement GPU)
+# ============================================================
+
+[[models]]
+id = "llama-3.1-70b-instruct-q2_k"
+name = "Llama 3.1 70B Instruct (Q2_K) — très lent, 70B quantizé bas"
+url = "https://huggingface.co/lmstudio-community/Meta-Llama-3.1-70B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-70B-Instruct-Q2_K.gguf"
+sha256 = "TODO_J4"
+size_bytes = 0
+quantization = "Q2_K"
+license = "Llama Community License"
+ram_min_gb = 32
+
+[[models]]
+id = "llama-3.1-70b-instruct-q3_k_m"
+name = "Llama 3.1 70B Instruct (Q3_K_M)"
+url = "https://huggingface.co/lmstudio-community/Meta-Llama-3.1-70B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-70B-Instruct-Q3_K_M.gguf"
+sha256 = "TODO_J4"
+size_bytes = 0
+quantization = "Q3_K_M"
+license = "Llama Community License"
+ram_min_gb = 40
+
+# ============================================================
+# Embedder — alternative téléchargeable à l'embedder embarqué du repo
+# ============================================================
+
 [[models]]
 id = "bge-small-en-v1.5-q8"
 name = "BGE Small EN v1.5 (Q8_0)"
@@ -104,3 +383,13 @@ size_bytes = 0
 quantization = "Q8_0"
 license = "MIT (BGE)"
 ram_min_gb = 1
+
+[[models]]
+id = "nomic-embed-text-v2-moe-q8"
+name = "Nomic Embed Text v2 MoE (Q8_0) — long context 2K"
+url = "https://huggingface.co/nomic-ai/nomic-embed-text-v2-moe-GGUF/resolve/main/nomic-embed-text-v2-moe-Q8_0.gguf"
+sha256 = "TODO_J4"
+size_bytes = 0
+quantization = "Q8_0"
+license = "Apache-2.0 (Nomic)"
+ram_min_gb = 2

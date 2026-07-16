@@ -1,7 +1,7 @@
 # Cyonima-code-agent
 
 > Agent IA de code **100% local, gratuit et open source** pour Windows, macOS et Linux.
-> Multi-session, multi-modèles, multi-backends. Inspiré d'[Opencode](https://opencode.ai) et de [Kiro IDE](https://kiro.dev).
+> Multi-session, multi-modèles, multi-backends. Inspiré d'[Opencode](https://opencode.ai/go?ref=ZB69DAJS6H) et de [Kiro IDE](https://kiro.dev).
 
 ## Pourquoi Cyonima ?
 
