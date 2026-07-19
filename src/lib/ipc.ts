@@ -94,12 +94,30 @@ export function onSessionError(
   return listen("session:error", (ev) => cb(ev.payload as never));
 }
 
+export function onSessionToolCall(
+  cb: (e: { sessionId: string; callId: string; tool: string; arguments: unknown }) => void,
+): Promise<UnlistenFn> {
+  return listen("session:tool_call", (ev) => cb(ev.payload as never));
+}
+
+export function onSessionToolResult(
+  cb: (e: { sessionId: string; callId: string; tool: string; output: string; isError: boolean }) => void,
+): Promise<UnlistenFn> {
+  return listen("session:tool_result", (ev) => cb(ev.payload as never));
+}
+
 export function onDownloadProgress(cb: (e: DownloadProgress) => void): Promise<UnlistenFn> {
   return listen("model:download:progress", (ev) => cb(ev.payload as never));
 }
 
-export function onPermissionRequest(
-  cb: (e: { requestId: string; tool: string; args: unknown }) => void,
-): Promise<UnlistenFn> {
+export interface PermissionRequestEvent {
+  requestId: string;
+  sessionId: string;
+  tool: string;
+  arguments: unknown;
+  preview?: string;
+}
+
+export function onPermissionRequest(cb: (e: PermissionRequestEvent) => void): Promise<UnlistenFn> {
   return listen("permission:request", (ev) => cb(ev.payload as never));
 }

@@ -48,7 +48,11 @@ fn platform_detect() -> Option<Vec<u64>> {
             out.push(vram);
         }
     }
-    if out.is_empty() { None } else { Some(out) }
+    if out.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -77,7 +81,11 @@ fn platform_detect() -> Option<Vec<u64>> {
             }
         }
     }
-    if out.is_empty() { None } else { Some(out) }
+    if out.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -99,21 +107,25 @@ fn platform_detect() -> Option<Vec<u64>> {
         if !trimmed.starts_with("VRAM") {
             continue;
         }
-        let Some((_, val)) = trimmed.split_once(':') else { continue };
+        let Some((_, val)) = trimmed.split_once(':') else {
+            continue;
+        };
         let val = val.trim();
         // Formats : "16 GB", "16384 MB", "8 GB"
         let bytes = parse_vram_string(val)?;
         vrams.push(bytes);
     }
-    if vrams.is_empty() { None } else { Some(vrams) }
+    if vrams.is_empty() {
+        None
+    } else {
+        Some(vrams)
+    }
 }
 
 #[cfg(target_os = "macos")]
 fn parse_vram_string(s: &str) -> Option<u64> {
     let s = s.trim();
-    let (num_part, unit) = s
-        .split_once(' ')
-        .unwrap_or((s, "GB"));
+    let (num_part, unit) = s.split_once(' ').unwrap_or((s, "GB"));
     let n: f64 = num_part.parse().ok()?;
     let bytes = match unit.to_ascii_uppercase().as_str() {
         "GB" => n * (1u64 << 30) as f64,

@@ -1,8 +1,8 @@
 //! Handlers Tauri (commands + events) câblés avec le cœur applicatif.
 //!
-//! J1 : `session_create` / `session_send` / `session_cancel` / `session_fork`
-//! sont **réellement opérationnels** via le provider `ollama`. Voir
-//! `docs/ROADMAP.md` pour les jalons des autres handlers.
+//! J3 : `session_send` fait tourner la boucle d'agent complète (tool calls +
+//! gateway permissions + AGENTS.md). `permission_respond` débloque la gateway
+//! via IPC. Voir `docs/ROADMAP.md` pour les autres jalons.
 
 use std::sync::Arc;
 
@@ -10,18 +10,21 @@ use tauri::State;
 
 use crate::hardware::{self, HardwareInfo};
 use crate::models::ModelInfo;
+use crate::permissions::{Decision, Gateway};
 use crate::providers::ProviderKind;
 use crate::sessions::{SessionInfo, SessionManager};
 
 /// État partagé Tauri.
 pub struct AppState {
     pub sessions: Arc<SessionManager>,
+    pub gateway: Arc<Gateway>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
         Self {
             sessions: Arc::new(SessionManager::new()),
+            gateway: Arc::new(Gateway::new()),
         }
     }
 }
@@ -33,9 +36,13 @@ pub fn session_create(
     model_id: String,
     provider_id: ProviderKind,
 ) -> SessionInfo {
-    state
-        .sessions
-        .create(workspace, model_id, provider_id, None)
+    state.sessions.create(
+        Arc::clone(&state.gateway),
+        workspace,
+        model_id,
+        provider_id,
+        None,
+    )
 }
 
 #[tauri::command]
@@ -45,7 +52,9 @@ pub async fn session_send(
     session_id: String,
     message: String,
 ) -> Result<(), String> {
-    state.sessions.send(app, session_id, message)
+    state
+        .sessions
+        .send(app, Arc::clone(&state.gateway), session_id, message)
 }
 
 #[tauri::command]
@@ -55,7 +64,7 @@ pub fn session_cancel(state: State<'_, AppState>, session_id: String) -> Result<
 
 #[tauri::command]
 pub fn session_fork(state: State<'_, AppState>, session_id: String) -> Option<SessionInfo> {
-    state.sessions.fork(&session_id)
+    state.sessions.fork(Arc::clone(&state.gateway), &session_id)
 }
 
 #[tauri::command]
@@ -98,9 +107,22 @@ pub fn model_import_custom(path: String) -> Result<ModelInfo, String> {
     crate::models::import_custom(&path).map_err(|e| e.to_string())
 }
 
+/// Débloque la gateway en attente pour un tool-call précédemment demandé.
+/// Appelée par l'UI après qu'un utilisateur a cliqué Allow/Deny sur la
+/// modale d'approbation.
 #[tauri::command]
-pub fn permission_respond(_request_id: String, _decision: String) {
-    // J3 : débloque le gateway permissions en attente.
+pub async fn permission_respond(
+    state: State<'_, AppState>,
+    request_id: String,
+    decision: String,
+) -> Result<(), String> {
+    let decision = match decision.as_str() {
+        "allow" => Decision::Allow,
+        "deny" => Decision::Deny,
+        other => return Err(format!("decision invalide: {other} (attendu: allow|deny)")),
+    };
+    state.gateway.respond(&request_id, decision).await;
+    Ok(())
 }
 
 /// Snapshot hardware pour l'UI (affiché dans Settings + barre de statut).

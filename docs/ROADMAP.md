@@ -40,12 +40,32 @@ Les jalons sont prévus pour être livrés dans l'ordre. Chacun a des critères 
 - Event routing par `session_id`
 - **DoD** : 2 sessions parallèles avec modèles différents OK.
 
-## J3 — Outils agent + permissions
-- Outils `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `bash`
-- Gateway permissions + dialogue UI
-- AGENTS.md injecté dans le system prompt
-- `permission_respond` IPC
-- **DoD** : l'agent peut modifier un fichier du workspace après approbation.
+## J3 — Outils agent + permissions  ✅
+- Module `tools/` : trait `Tool` + `ToolRegistry` + 6 implémentations built-in
+  - `read_file` (lecture, sandboxée via `sandbox_resolve`)
+  - `write_file` (création/écrasement, mkdir parents auto)
+  - `edit_file` (remplacement exact unique — refuse les multiples)
+  - `glob` (pattern `**/*.rs` via `globwalk`)
+  - `grep` (regex + `walkdir`, skip `node_modules`/`target`/`dist`/`.git`/dotfiles)
+  - `bash` (`cmd /C` sur Windows, `/bin/sh -c` ailleurs, timeout 30s)
+  - Sandboxing workspace-rooted : refus de tout chemin qui remonte hors du workspace
+- Module `permissions/` : `Gateway` async avec `oneshot` + `Policy` (Auto/Ask/Deny)
+  - Defaults prudents : read/glob/grep = Auto, write/edit/bash = Ask
+  - Event `permission:request` pour dialogue UI ; `permission_respond` IPC
+  - Prévisualisation lisible des arguments (`→ path`, `$ command`)
+- Boucle d'agent `SessionManager::agent_loop` : LLM → tool_calls → permission → exec → message `tool` → re-LLM
+  - Borne `MAX_TOOL_ITERATIONS` = 32 pour prévenir les dérives infinies
+  - Events `session:tool_call` et `session:tool_result` pour l'UI
+- `AGENTS.md` (à la racine du workspace) injecté comme premier message `system`
+  - Convention reprise d'Opencode → consignes de style/sécurité/architecture
+- Provider Ollama : envoi du `tools` body (function-calling natif Ollama)
+  - Parsing `tool_calls` des chunks NDJSON → `ChatEvent::ToolCall`
+  - Compatible models tool-use : Llama 3.1+, Qwen 2.5, Gemma 4, Mistral Nemo…
+- UI :
+  - Modale `PermissionDialog` : preview + arguments JSON + Allow/Deny
+  - Tool-call blocks inline dans le chat (pending/ok/refusé, with résultat repliable)
+- Tests Rust : 5/5 (catalogue, AGENTS.md absent/présent, import_custom)
+- **DoD** : l'agent peut lire, modifier et exécuter des commandes dans le workspace après approbation utilisateur.
 
 ## J4 — Modèles distants (catalogue + downloader)
 - **Garde-fou hardware** : module `hardware/` détecte RAM totale / CPU / OS / arch via `sysinfo`, **VRAM GPU dédiée** (DXGI sur Windows, sysfs sur Linux, system_profiler sur macOS). Relaxation de `can_run_model` quand le modèle tient en VRAM. ✅ (J1.5)

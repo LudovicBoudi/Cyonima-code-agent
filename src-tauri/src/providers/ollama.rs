@@ -1,13 +1,10 @@
 //! Provider Ollama — HTTP streaming vers une instance Ollama locale externe.
 //!
-//! Totalement indépendant des binaires Cyonima : l'utilisateur doit avoir
-//! installé Ollama séparément (https://ollama.com) ET tiré un modèle
-//! (`ollama pull llama3.2`). Cyonima se contente de parler à son API HTTP
-//! de chat en streaming NDJSON.
-//!
-//! C'est le backend de référence de J1 : testable immédiatement sans
-//! embarquer de runtime d'inférence lourd. `LlamaCppProvider` (candle, built-in)
-//! arrivera en J1.5 pour le mode 100% local sans dépendance externe.
+//! Compatible avec le tool-use natif Ollama : on envoie `tools` dans le body,
+//! on parse `tool_calls` des chunks NDJSON et on les émet comme
+//! `ChatEvent::ToolCall`. Le `SessionManager` consomme ces tool calls, demande
+//! les permissions, exécute, puis renvoie un message `tool` au LLM pour
+//! continuer la conversation.
 
 use std::time::Duration;
 
@@ -32,12 +29,46 @@ struct OllamaChatRequest {
     messages: Vec<OllamaMessage>,
     stream: bool,
     options: OllamaOptions,
+    /// Outils activés (format OpenAI-compatible function calling).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    tools: Vec<OllamaTool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 struct OllamaMessage {
     role: String,
     content: String,
+    /// Images embed pour les modèles multimodal (non utilisé en J1).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    images: Vec<String>,
+    /// Pour les messages renvoyés par l'agent suite à un tool call.
+    /// (format OpenAI-compatible : le tool_call_id est dans `tool_calls`).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    tool_call_id: Option<String>,
+    /// Outil invoqué par l'assistant — format Ollama.
+    /// Présent sur les messages assistant contenant un tool call.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    tool_calls: Vec<OllamaToolCall>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct OllamaTool {
+    #[serde(rename = "type")]
+    kind: String,
+    function: OllamaToolDef,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct OllamaToolDef {
+    name: String,
+    description: String,
+    parameters: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct OllamaToolCall {
+    name: String,
+    arguments: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -60,7 +91,21 @@ struct OllamaChatChunk {
 
 #[derive(Debug, Clone, Deserialize)]
 struct OllamaChunkMessage {
+    #[serde(default)]
     content: String,
+    #[serde(default)]
+    tool_calls: Vec<OllamaChunkToolCall>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct OllamaChunkToolCall {
+    function: OllamaChunkToolFn,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct OllamaChunkToolFn {
+    name: String,
+    arguments: serde_json::Value,
 }
 
 impl OllamaProvider {
@@ -82,14 +127,30 @@ impl Provider for OllamaProvider {
 
     fn capabilities(&self) -> Capabilities {
         Capabilities {
-            supports_tools: false, // activable plus tard via format "tools"
+            // Ollama supporte les tools nativement sur les modèles compatibles
+            // (Llama 3.1+, Mistral, Qwen 2.5, Gemma 4). On déclare `true` et
+            // l'utilisateur choisit un modèle qui l'accepte dans l'UI.
+            supports_tools: true,
             supports_vision: false,
-            context_window: 8192, // dépend du modèle, on garde une valeur prudente
+            context_window: 8192,
         }
     }
 
     async fn stream(&self, req: ChatRequest) -> BoxStream<'static, ChatEvent> {
         let url = format!("{}/api/chat", self.endpoint.trim_end_matches('/'));
+        let tools = req
+            .tools
+            .iter()
+            .map(|t| OllamaTool {
+                kind: "function".into(),
+                function: OllamaToolDef {
+                    name: t.name.clone(),
+                    description: t.description.clone(),
+                    parameters: t.parameters.clone(),
+                },
+            })
+            .collect::<Vec<_>>();
+
         let body = OllamaChatRequest {
             model: req.model.clone(),
             messages: req
@@ -98,6 +159,9 @@ impl Provider for OllamaProvider {
                 .map(|m| OllamaMessage {
                     role: m.role.as_str().into(),
                     content: m.content.clone(),
+                    images: Vec::new(),
+                    tool_call_id: None,
+                    tool_calls: Vec::new(),
                 })
                 .collect(),
             stream: true,
@@ -105,13 +169,11 @@ impl Provider for OllamaProvider {
                 temperature: req.temperature,
                 num_predict: req.max_tokens,
             },
+            tools,
         };
 
         let client = self.client.clone();
 
-        // L'appel HTTP et le parsing NDJSON vivent dans un seul `async_stream!`
-        // pour retourner directement un `BoxStream`. Les branches d'erreur
-        // yield un `ChatEvent::Error` puis un `ChatEvent::Done` puis terminent.
         let s = async_stream::stream! {
             let response = match client.post(&url).json(&body).send().await {
                 Ok(r) => r,
@@ -140,7 +202,6 @@ impl Provider for OllamaProvider {
                 match chunk_res {
                     Ok(bytes) => {
                         buffer.extend_from_slice(&bytes);
-                        // Une ligne NDJSON complète = un objet JSON indépendant.
                         while let Some(nl) = buffer.iter().position(|b| *b == b'\n') {
                             let line: Vec<u8> = buffer.drain(..=nl).collect();
                             let line_str = match std::str::from_utf8(&line) {
@@ -152,6 +213,13 @@ impl Provider for OllamaProvider {
                             if let Some(msg) = parsed.message {
                                 if !msg.content.is_empty() {
                                     yield ChatEvent::Token(msg.content);
+                                }
+                                for tc in msg.tool_calls {
+                                    yield ChatEvent::ToolCall(super::ToolCall {
+                                        id: uuid::Uuid::new_v4().to_string(),
+                                        tool: tc.function.name,
+                                        arguments: tc.function.arguments,
+                                    });
                                 }
                             }
                             if parsed.done {

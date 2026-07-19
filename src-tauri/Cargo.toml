@@ -47,6 +47,11 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "linux-
 # Détection hardware pour valider l'éligibilité d'un modèle avant download
 sysinfo = { version = "0.32", default-features = false, features = ["system"] }
 
+# Outils agents
+globwalk = "0.9"
+regex = "1"
+walkdir = "2"
+
 # Détection VRAM GPU (Win32 DXGI). Le windows crate est déjà transitif via
 # tauri — on l'ajoute explicitement pour activer la feature.
 [target.'cfg(target_os = "windows")'.dependencies]

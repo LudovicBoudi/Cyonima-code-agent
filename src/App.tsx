@@ -3,8 +3,15 @@ import { SessionsView } from "./pages/SessionsView";
 import { CatalogView } from "./pages/CatalogView";
 import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
+import { PermissionDialog } from "./components/PermissionDialog";
 import { useSessionsStore } from "./store/sessions";
-import { onSessionToken, onSessionDone, onSessionError } from "./lib/ipc";
+import {
+  onSessionToken,
+  onSessionDone,
+  onSessionError,
+  onSessionToolCall,
+  onSessionToolResult,
+} from "./lib/ipc";
 
 type View = "sessions" | "catalog";
 
@@ -16,11 +23,21 @@ export default function App() {
   const appendToken = useSessionsStore((s) => s.appendToken);
   const setStreaming = useSessionsStore((s) => s.setStreaming);
   const setError = useSessionsStore((s) => s.setError);
+  const addToolCall = useSessionsStore((s) => s.addToolCall);
+  const setToolResult = useSessionsStore((s) => s.setToolResult);
 
   useEffect(() => {
     const unlistens: Array<() => void> = [];
     (async () => {
       unlistens.push(await onSessionToken((e) => appendToken(e.sessionId, e.token)));
+      unlistens.push(
+        await onSessionToolCall((e) =>
+          addToolCall(e.sessionId, { callId: e.callId, tool: e.tool, arguments: e.arguments }),
+        ),
+      );
+      unlistens.push(
+        await onSessionToolResult((e) => setToolResult(e.sessionId, e.callId, e.output, e.isError)),
+      );
       unlistens.push(
         await onSessionDone((e) => {
           setStreaming(e.sessionId, false);
@@ -34,10 +51,8 @@ export default function App() {
       );
     })();
     return () => unlistens.forEach((u) => u());
-  }, [appendToken, setStreaming, setError]);
+  }, [appendToken, setStreaming, setError, addToolCall, setToolResult]);
 
-  // Si l'utilisateur démarre la création d'une session, on bascule la vue
-  // sessions pour afficher le formulaire.
   useEffect(() => {
     if (creating || activeSessionId) setView("sessions");
   }, [creating, activeSessionId]);
@@ -51,6 +66,7 @@ export default function App() {
         </main>
       </div>
       <StatusBar />
+      <PermissionDialog />
     </div>
   );
 }

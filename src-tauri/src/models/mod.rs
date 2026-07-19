@@ -154,7 +154,10 @@ mod tests {
     #[test]
     fn gemma4_entries_have_apache_license() {
         let catalog = list_catalog();
-        let g4: Vec<_> = catalog.iter().filter(|m| m.id.starts_with("gemma-4-")).collect();
+        let g4: Vec<_> = catalog
+            .iter()
+            .filter(|m| m.id.starts_with("gemma-4-"))
+            .collect();
         assert!(!g4.is_empty(), "Gemma 4 doit être présent");
         for m in &g4 {
             assert!(

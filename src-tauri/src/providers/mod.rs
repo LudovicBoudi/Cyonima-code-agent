@@ -55,8 +55,9 @@ pub struct ChatRequest {
     pub temperature: Option<f32>,
     /// Nombre max de tokens à générer.
     pub max_tokens: Option<u32>,
-    /// Outils activés pour cette session (noms d'outils).
-    pub tools: Vec<String>,
+    /// Spécifications des outils activés pour cette session (envoyées au
+    /// provider dans le format function-calling natif quand supporté).
+    pub tools: Vec<crate::tools::ToolSpec>,
     /// Identifiant du modèle côté provider (ex: "llama3.2" pour Ollama,
     /// chemin GGUF pour llama_cpp). Renseigné par le session manager.
     pub model: String,

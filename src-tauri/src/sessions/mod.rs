@@ -1,14 +1,17 @@
 //! Gestionnaire de sessions — multi-session parallèle sur le même projet.
 //!
-//! Chaque [`SessionInner`] est un agent isolé : son propre provider (instance
-//! concrète du trait [`Provider`]), son propre contexte de messages et son
-//! propre `CancellationToken`. Le streaming se fait via les events Tauri
-//! `session:token` / `session:done` / `session:error` émis depuis un
-//! `tokio::task` dédié par envoi.
+//! En J3 la session devient un **agent** : la réponse streamée peut contenir
+//! des tool_calls, qui sont routés via la gateway de permissions, exécutés via
+//! le `ToolRegistry`, puis le résultat est réinjecté au LLM pour continuer
+//! la conversation. La boucle est bornée par `MAX_TOOL_ITERATIONS` (32) pour
+//! éviter une dérive infinie même si un modèle refuse de s'arrêter.
 //!
-//! J0/J1 : pas encore de persistance SQLite (prévue en J2). L'état vit en
-//! mémoire dans un `DashMap` partagé via `Arc<SessionManager>`.
+//! AGENTS.md (s'il existe à la racine du workspace) est injecté comme premier
+//! message `system` du contexte, conformément à la convention Opencode.
 
+pub mod agents_md;
+
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -20,9 +23,14 @@ use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::providers::{self, ChatEvent, ChatMessage, ChatRequest, Provider, ProviderKind};
+use crate::permissions::{Decision, Gateway};
+use crate::providers::{self, ChatEvent, ChatMessage, ChatRequest, Provider, ProviderKind, Role};
+use crate::tools::ToolRegistry;
 
-/// Métadonnées d'une session, exposées à l'UI via IPC.
+/// Nombre maximum d'itérations tool-call → tool-result par envoi utilisateur.
+/// Au-delà, on coupe et on termine la session avec un message d'erreur.
+const MAX_TOOL_ITERATIONS: usize = 32;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionInfo {
     pub id: String,
@@ -52,13 +60,12 @@ impl SessionInfo {
     }
 }
 
-/// État complet d'une session (contexte + runtime). Jamais sérialisé tel quel
-/// dans l'UI — seules les `SessionInfo` + les messages le sont, via events.
 pub struct SessionInner {
     pub info: SessionInfo,
     pub provider: Arc<dyn Provider>,
-    /// Contexte de conversation accumulé au fil des échanges. Mutex car
-    /// partagé entre la tâche de streaming et d'éventuels forks (J2).
+    pub tools: ToolRegistry,
+    /// Contexte de conversation (incluant le AGENTS.md en tête). Mutex car
+    /// partagé entre la task de streaming et les forks.
     pub messages: Mutex<Vec<ChatMessage>>,
     /// Permet à `session_cancel` d'interrompre le stream courant.
     pub cancel: CancellationToken,
@@ -66,7 +73,6 @@ pub struct SessionInner {
     pub busy: Mutex<bool>,
 }
 
-/// Le gestionnaire de sessions. Partagé globalement via `Arc` dans le state Tauri.
 #[derive(Default)]
 pub struct SessionManager {
     sessions: DashMap<String, Arc<SessionInner>>,
@@ -79,10 +85,28 @@ pub struct TokenEvent {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct ToolCallEvent {
+    pub session_id: String,
+    pub call_id: String,
+    pub tool: String,
+    pub arguments: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ToolResultEvent {
+    pub session_id: String,
+    pub call_id: String,
+    pub tool: String,
+    pub output: String,
+    pub is_error: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct DoneEvent {
     pub session_id: String,
     pub usage: providers::Usage,
-    /// Message assistant complet (utile pour persistance future, J2).
+    /// Message assistant complet dernier de la boucle (sans les tool calls
+    /// intermédiaires — pour persistance future, J2).
     pub assistant_message: String,
 }
 
@@ -99,9 +123,10 @@ impl SessionManager {
         }
     }
 
-    /// Crée une session, instancie le provider associé et l'enregistre.
+    /// Crée une session, instancie le provider + le registry + le AGENTS.md.
     pub fn create(
         &self,
+        gateway: Arc<Gateway>,
         workspace: String,
         model_id: String,
         provider_kind: ProviderKind,
@@ -112,15 +137,28 @@ impl SessionManager {
             endpoint,
             api_key: None,
         });
-        let info = SessionInfo::new(workspace, model_id, provider_kind);
+        let info = SessionInfo::new(workspace.clone(), model_id, provider_kind);
+        let abs_workspace = canonicalize_workspace(&workspace);
+        let mut initial_messages: Vec<ChatMessage> = Vec::new();
+
+        // AGENTS.md injecté comme system prompt s'il existe.
+        if let Some(agents_content) = agents_md::load(&abs_workspace) {
+            initial_messages.push(ChatMessage {
+                role: Role::System,
+                content: agents_content,
+            });
+        }
+
         let inner = Arc::new(SessionInner {
             info: info.clone(),
             provider,
-            messages: Mutex::new(Vec::new()),
+            tools: ToolRegistry::built_in(),
+            messages: Mutex::new(initial_messages),
             cancel: CancellationToken::new(),
             busy: Mutex::new(false),
         });
         self.sessions.insert(info.id.clone(), inner);
+        let _ = gateway; // état partagé via AppState
         info
     }
 
@@ -132,9 +170,9 @@ impl SessionManager {
         self.sessions.get(id).map(|r| Arc::clone(&r))
     }
 
-    /// Fork en J2 : copie du contexte. Ici on duplique juste la metadata pour
-    /// ne pas mentir sur le périmètre J1 (le contexte viendra en J2).
-    pub fn fork(&self, id: &str) -> Option<SessionInfo> {
+    /// Fork : copie du contexte vers une nouvelle session avec son propre
+    /// `CancellationToken`. Implémentation V1 : copie in-memory. J2 = persistance.
+    pub fn fork(&self, gateway: Arc<Gateway>, id: &str) -> Option<SessionInfo> {
         let src = self.get(id)?;
         let forked = SessionInfo::new(
             src.info.workspace.clone(),
@@ -142,30 +180,35 @@ impl SessionManager {
             src.info.provider_id,
         );
         let provider = src.provider.clone();
+        let tools = src.tools.clone();
         let messages = src.messages.blocking_lock().clone();
         let inner = Arc::new(SessionInner {
             info: forked.clone(),
             provider,
+            tools,
             messages: Mutex::new(messages),
             cancel: CancellationToken::new(),
             busy: Mutex::new(false),
         });
         self.sessions.insert(forked.id.clone(), inner);
+        let _ = gateway;
         Some(forked)
     }
 
-    /// Envoie un message utilisateur et lance le streaming de la réponse.
-    ///
-    /// Le stream tourne dans un `tokio::task` : la commande IPC peut donc
-    /// retourner immédiatement, les tokens sont poussés via events Tauri.
-    pub fn send(&self, app: AppHandle, session_id: String, message: String) -> Result<(), String> {
+    /// Envoie un message utilisateur et lance la boucle d'agent.
+    pub fn send(
+        &self,
+        app: AppHandle,
+        gateway: Arc<Gateway>,
+        session_id: String,
+        message: String,
+    ) -> Result<(), String> {
         let session = self
             .get(&session_id)
             .ok_or_else(|| format!("Session '{session_id}' introuvable"))?;
 
-        // Refuse un envoi concurrent sur la même session.
         {
-            let mut busy = app_handle_block_lock(&session.busy);
+            let mut busy = tokio::task::block_in_place(|| session.busy.blocking_lock());
             if *busy {
                 return Err(
                     "Un stream est déjà en cours sur cette session — annulez-le d'abord.".into(),
@@ -174,23 +217,21 @@ impl SessionManager {
             *busy = true;
         }
 
-        // Ajoute immédiatement le message utilisateur au contexte.
         {
-            let mut msgs = app_handle_block_lock(&session.messages);
+            let mut msgs = tokio::task::block_in_place(|| session.messages.blocking_lock());
             msgs.push(ChatMessage {
-                role: providers::Role::User,
+                role: Role::User,
                 content: message,
             });
         }
 
         let task_session = Arc::clone(&session);
         tokio::spawn(async move {
-            stream_task(app, task_session).await;
+            agent_loop(app, gateway, task_session).await;
         });
         Ok(())
     }
 
-    /// Annule le stream en cours d'une session (sans détruire la session).
     pub fn cancel(&self, session_id: &str) -> Result<(), String> {
         let session = self
             .get(session_id)
@@ -198,100 +239,190 @@ impl SessionManager {
         session.cancel.cancel();
         Ok(())
     }
-
-    /// Liste les dernières messages d'une session — utile pour rafraîchir l'UI.
-    pub fn history(&self, session_id: &str) -> Option<Vec<ChatMessage>> {
-        let session = self.get(session_id)?;
-        // block_in_place car appelé depuis une commande IPC sync.
-        let msgs = tokio::task::block_in_place(|| session.messages.blocking_lock().clone());
-        Some(msgs)
-    }
 }
 
-/// Boucle de streaming consommée dans un `tokio::task` dédié par `send`.
-async fn stream_task(app: AppHandle, session: Arc<SessionInner>) {
+/// Boucle d'agent : LLM stream → tool calls → permission → exec → re-LLM.
+async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionInner>) {
+    let workspace = canonicalize_workspace(&session.info.workspace);
     let cancel = session.cancel.clone();
     let session_id = session.info.id.clone();
+    let specs = session.tools.specs();
 
-    // Snapshot du contexte à mettre dans la requête.
-    let messages = { session.messages.lock().await.clone() };
-    let req = ChatRequest {
-        messages,
-        model: session.info.model_id.clone(),
-        ..Default::default()
-    };
-
-    let mut stream = session.provider.stream(req).await;
-
-    let mut assistant_buffer = String::new();
+    let mut final_assistant = String::new();
     let mut final_usage = providers::Usage::default();
     let mut errored = false;
 
-    while let Some(event) = stream.next().await {
+    for _ in 0..=MAX_TOOL_ITERATIONS {
         if cancel.is_cancelled() {
             break;
         }
-        match event {
-            ChatEvent::Token(tok) => {
-                assistant_buffer.push_str(&tok);
-                let _ = app.emit(
-                    "session:token",
-                    TokenEvent {
-                        session_id: session_id.clone(),
-                        token: tok,
-                    },
-                );
-            }
-            ChatEvent::Done(usage) => {
-                final_usage = usage;
+
+        let messages = { session.messages.lock().await.clone() };
+        let req = ChatRequest {
+            messages,
+            model: session.info.model_id.clone(),
+            tools: specs.clone(),
+            ..Default::default()
+        };
+
+        let mut stream = session.provider.stream(req).await;
+        let mut assistant_buffer = String::new();
+        let mut tool_calls: Vec<providers::ToolCall> = Vec::new();
+        let mut had_error = false;
+
+        while let Some(event) = stream.next().await {
+            if cancel.is_cancelled() {
                 break;
             }
-            ChatEvent::Error(err) => {
-                errored = true;
-                let _ = app.emit(
-                    "session:error",
-                    ErrorEvent {
-                        session_id: session_id.clone(),
-                        error: err,
-                    },
-                );
-            }
-            ChatEvent::ToolCall(_) | ChatEvent::ToolResult(_) => {
-                // Tool-use wiring prévu en J3 — ignoré en J1.
+            match event {
+                ChatEvent::Token(tok) => {
+                    assistant_buffer.push_str(&tok);
+                    let _ = app.emit(
+                        "session:token",
+                        TokenEvent {
+                            session_id: session_id.clone(),
+                            token: tok,
+                        },
+                    );
+                }
+                ChatEvent::ToolCall(tc) => {
+                    tool_calls.push(tc.clone());
+                    let _ = app.emit(
+                        "session:tool_call",
+                        ToolCallEvent {
+                            session_id: session_id.clone(),
+                            call_id: tc.id.clone(),
+                            tool: tc.tool.clone(),
+                            arguments: tc.arguments.clone(),
+                        },
+                    );
+                }
+                ChatEvent::Done(usage) => {
+                    final_usage = usage;
+                    break;
+                }
+                ChatEvent::Error(err) => {
+                    had_error = true;
+                    errored = true;
+                    let _ = app.emit(
+                        "session:error",
+                        ErrorEvent {
+                            session_id: session_id.clone(),
+                            error: err,
+                        },
+                    );
+                }
+                ChatEvent::ToolResult(_) => {
+                    // émis par le manager lui-même, jamais reçu du provider
+                }
             }
         }
+
+        // Persiste le message assistant (même si tool-call-only, certains LLM
+        // mettent du contenu texte dans le même message).
+        if !assistant_buffer.is_empty() {
+            session.messages.lock().await.push(ChatMessage {
+                role: Role::Assistant,
+                content: assistant_buffer.clone(),
+            });
+            final_assistant = assistant_buffer.clone();
+        }
+
+        if had_error || tool_calls.is_empty() || cancel.is_cancelled() {
+            break;
+        }
+
+        // Exécute séquentiellement les tool calls (V1, pas de parallélisme).
+        // Pour chaque : demande permission → exécute → émet event →
+        // ajoute message `tool` au contexte.
+        let mut denied_any = false;
+        for tc in tool_calls {
+            if cancel.is_cancelled() {
+                break;
+            }
+            // Demande permission.
+            let decision = gateway
+                .request(
+                    app.clone(),
+                    session_id.clone(),
+                    &tc.tool,
+                    tc.arguments.clone(),
+                )
+                .await;
+            if decision == Decision::Deny {
+                denied_any = true;
+                let _ = app.emit(
+                    "session:tool_result",
+                    ToolResultEvent {
+                        session_id: session_id.clone(),
+                        call_id: tc.id.clone(),
+                        tool: tc.tool.clone(),
+                        output: "Refusé par l'utilisateur".into(),
+                        is_error: true,
+                    },
+                );
+                // On injecte un message `tool` décrivant le refus pour que le
+                // LLM sache qu'il doit chercher une alternative.
+                session.messages.lock().await.push(ChatMessage {
+                    role: Role::Tool,
+                    content: format!("Outil `{}` refusé par l'utilisateur.", tc.tool),
+                });
+                continue;
+            }
+
+            // Exécution. Si args invalide, ToolOutput.is_error=true.
+            let output = session
+                .tools
+                .execute(&tc.tool, tc.arguments.clone(), &workspace)
+                .await
+                .unwrap_or_else(|| crate::tools::ToolOutput::err(&tc.tool, "outil inconnu"));
+
+            let _ = app.emit(
+                "session:tool_result",
+                ToolResultEvent {
+                    session_id: session_id.clone(),
+                    call_id: tc.id.clone(),
+                    tool: output.tool.clone(),
+                    output: output.output.clone(),
+                    is_error: output.is_error,
+                },
+            );
+            // Format du message `tool` attendu par Ollama/OpenAI-compatible :
+            // le contenu porte le résultat texte rendu au modèle.
+            session.messages.lock().await.push(ChatMessage {
+                role: Role::Tool,
+                content: output.output.clone(),
+            });
+        }
+
+        // La boucle remonte et renvoie le contexte mis à jour au LLM.
+        let _ = denied_any;
     }
 
-    // Persiste le message assistant dans le contexte (même si erreur partielle).
-    if !assistant_buffer.is_empty() {
-        let mut msgs = session.messages.lock().await;
-        msgs.push(ChatMessage {
-            role: providers::Role::Assistant,
-            content: assistant_buffer.clone(),
-        });
-    }
-
-    // Tag la session comme libre pour un prochain envoi.
     {
         let mut busy = session.busy.lock().await;
         *busy = false;
     }
 
-    if !errored {
+    if !errored && !cancel.is_cancelled() {
         let _ = app.emit(
             "session:done",
             DoneEvent {
                 session_id: session_id.clone(),
                 usage: final_usage,
-                assistant_message: assistant_buffer,
+                assistant_message: final_assistant,
             },
         );
     }
 }
 
-/// Helper : lock synchrone d'un `tokio::Mutex` depuis une commande IPC qui
-/// n'est pas async. On utilise `block_in_place` pour ne pas bloquer le
-/// runtime sur une contention éventuelle.
-fn app_handle_block_lock<T>(m: &Mutex<T>) -> tokio::sync::MutexGuard<'_, T> {
-    tokio::task::block_in_place(|| m.blocking_lock())
+/// Canonise le chemin workspace en absolu. En cas d'échec (workspace relatif
+/// "." par exemple), on retombe sur le CWD si possible, sinon sur le chemin
+/// tel quel.
+fn canonicalize_workspace(workspace: &str) -> PathBuf {
+    let p = PathBuf::from(workspace);
+    match p.canonicalize() {
+        Ok(c) => c,
+        Err(_) => std::env::current_dir().unwrap_or_else(|_| p.clone()),
+    }
 }
