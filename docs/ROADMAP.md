@@ -1,4 +1,4 @@
-# Roadmap — Cyonima-code-agent v1
+# Roadmap — Cyonima-ia-code-agent v1
 
 Les jalons sont prévus pour être livrés dans l'ordre. Chacun a des critères de définition (DoD) clairs.
 

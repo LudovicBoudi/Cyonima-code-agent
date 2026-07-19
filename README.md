@@ -1,12 +1,13 @@
-# Cyonima-code-agent
+# Cyonima-ia-code-agent
 
 > Agent IA de code **100% local, gratuit et open source** pour Windows, macOS et Linux.
 > Multi-session, multi-modèles, multi-backends. Inspiré d'[Opencode](https://opencode.ai/go?ref=ZB69DAJS6H) et de [Kiro IDE](https://kiro.dev).
+> **Cyonima** est une marque.
 
-## Pourquoi Cyonima ?
+## Pourquoi Cyonima IA ?
 
 La majorité des outils d'IA « locaux » existants limitent leur usage pour forcer un abonnement.
-Cyonima-code-agent est l'inverse :
+Cyonima-ia-code-agent est l'inverse :
 
 - **Gratuit pour toujours** : aucune télémétrie, aucun compte, aucune session distante obligatoire.
 - **Open source (MIT)** : code, modèles par défaut, et catalogue de téléchargement tous ouverts.

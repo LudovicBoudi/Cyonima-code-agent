@@ -1,5 +1,5 @@
 {
-  "name": "cyonima-code-agent",
+  "name": "cyonima-ia-code-agent",
   "version": "0.1.0",
   "description": "Agent IA de code 100% local, gratuit et open source. Multi-session, multi-modèles, multi-backends.",
   "license": "MIT",

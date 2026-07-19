@@ -1,4 +1,4 @@
-# Architecture — Cyonima-code-agent
+# Architecture — Cyonima-ia-code-agent
 
 ## Vue d'ensemble
 

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Cyonima",
+  "productName": "Cyonima IA",
   "version": "0.1.0",
-  "identifier": "com.cyonima.code-agent",
+  "identifier": "com.cyonima.ia-code-agent",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Cyonima",
+        "title": "Cyonima IA",
         "width": 1280,
         "height": 800,
         "minWidth": 800,
@@ -39,6 +39,6 @@
     "copyright": "© 2026 Cyonima — MIT License",
     "category": "DeveloperTool",
     "shortDescription": "Agent IA de code local, gratuit et open source",
-    "longDescription": "Cyonima-code-agent : agent IA multi-session, multi-modèles, multi-backends. 100% local, open source MIT."
+    "longDescription": "Cyonima-ia-code-agent : agent IA multi-session, multi-modèles, multi-backends. 100% local, open source MIT. Cyonima est une marque."
   }
 }

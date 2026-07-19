@@ -1,7 +1,9 @@
-# AGENTS.md — Instructions par défaut pour les agents Cyonima
+# AGENTS.md — Instructions par défaut pour les agents Cyonima IA
 
-Ce fichier est lu par Cyonima-code-agent quand il travaille dans ce dépôt et injecté dans le system prompt.
+Ce fichier est lu par Cyonima-ia-code-agent quand il travaille dans ce dépôt et injecté dans le system prompt.
 Vous pouvez créer un `AGENTS.md` à la racine de n'importe quel projet pour le personnaliser.
+
+> **Cyonima** est une marque. Le produit est **Cyonima-ia-code-agent**.
 
 ## Style de code
 
@@ -11,7 +13,7 @@ Vous pouvez créer un `AGENTS.md` à la racine de n'importe quel projet pour le 
 
 ## Priorité au local
 
-Cyonima-code-agent est conçu pour tourner en local d'abord. Toute nouvelle fonctionnalité doit fonctionner sans réseau et sans compte distant. Les appels distants (API, model hub) sont optionnels et isolés derrière des flags/traits clairs.
+Cyonima-ia-code-agent est conçu pour tourner en local d'abord. Toute nouvelle fonctionnalité doit fonctionner sans réseau et sans compte distant. Les appels distants (API, model hub) sont optionnels et isolés derrière des flags/traits clairs.
 
 ## Taille des binaires < 50 Mo dans le repo
 
