@@ -34,11 +34,30 @@ Les jalons sont prévus pour être livrés dans l'ordre. Chacun a des critères 
 - Tests Rust : 3 (catalogue non vide, IDs uniques, Gemma 4 Apache + tag Ollama, import_custom reject)
 - **J1.5 suite (candle built-in)** : reporté au jalon qui permette un test réel contre un GGUF (J4 downloader). On ne livre pas candle au doigt mouillé.
 
-## J2 — Multi-session
-- `SessionManager` : pool, fork, persistance SQLite
-- UI : onglets multiples, état par session
-- Event routing par `session_id`
-- **DoD** : 2 sessions parallèles avec modèles différents OK.
+## J2 — Multi-session  ✅
+- `sessions/persistence.rs` : SQLite `~/.cyonima/sessions.db`
+  - Tables `sessions` + `messages` avec `ON DELETE CASCADE`
+  - Journal mode `WAL` pour permettre multi-session lecture/écriture concurrente
+  - FOREIGN_KEYS activées (CASCADE delete messages sur delete session)
+  - Atomic flush, pool Sqlx partagé via `AppState`
+  - 4 tests Rust : upsert/list, append/load messages, delete cascade, set/get title
+- `SessionManager` extension :
+  - `with_persistence(Persistence)` + `restore_all()` au démarrage
+  - `create/fork/send/delete` deviennent async et persistent (session + messages)
+  - Message `AGENTS.md` system n'est **pas** persisté : rechargé à chaque `restore_all`
+  - Chaque message `user`, `assistant` (post-stream), `tool` (résultat + refus) est flushé
+  - En cas d'erreur DB on log + continue (la session reste fonctionnelle en mémoire)
+- 3 nouvelles IPC : `session_history(session_id)` → `Vec<ChatMessage>`, `session_delete(session_id)`, `session_fork` async
+- UI SessionManager (Zustand) :
+  - `loadAll()` appelé au démarrage App → `sessionList()` + restaure la plus récente active
+  - `restoreMessages(sessionId)` recharge l'historique quand l'utilisateur switch d'onglet vers une session non encore chargée
+  - `deleteSession(sessionId)` supprime localement et switch vers la suivante
+  - `forkSession(sessionId)` crée une nouvelle session avec le même contexte + restore ses messages
+- UI Sidebar :
+  - Compteur "Sessions (N)" dans la nav
+  - Boutons hover par session : ✕ (supprimer) + Fork
+  - « Sessions récentes » section en dessous des liens Sessions / Catalogue
+- **DoD J2** : 2 sessions parallèles avec modèles différents OK + après redémarrage de l'app, les sessions et leurs messages sont restaurés automatiquement. Boutons ✕ et Fork opérationnels.
 
 ## J3 — Outils agent + permissions  ✅
 - Module `tools/` : trait `Tool` + `ToolRegistry` + 6 implémentations built-in
@@ -67,12 +86,34 @@ Les jalons sont prévus pour être livrés dans l'ordre. Chacun a des critères 
 - Tests Rust : 5/5 (catalogue, AGENTS.md absent/présent, import_custom)
 - **DoD** : l'agent peut lire, modifier et exécuter des commandes dans le workspace après approbation utilisateur.
 
-## J4 — Modèles distants (catalogue + downloader)
+## J4 — Modèles distants (catalogue + downloader)  ✅
 - **Garde-fou hardware** : module `hardware/` détecte RAM totale / CPU / OS / arch via `sysinfo`, **VRAM GPU dédiée** (DXGI sur Windows, sysfs sur Linux, system_profiler sur macOS). Relaxation de `can_run_model` quand le modèle tient en VRAM. ✅ (J1.5)
 - **Parser catalogue TOML embarqué** (`docs/models-catalog.toml` via `include_str!`), exposition IPC `model_catalog_list` + UI Catalogue avec badges éligibilité et tags Ollama. ✅ (J1.5)
-- ⏳ Downloader async (HTTP range + SHA256 + reprise + pause) + événements `model:download:progress`
-- ⏳ UI progression téléchargement + vérif espace disque
-- **DoD** : téléchargement Qwen2.5-Coder-7B Q4 depuis HuggingFace depuis l'UI.
+- **Downloader async robuste** :
+  - HTTP `Range: bytes=<n>-` pour reprise sur interruption
+  - SHA256 incrémental `sha2` (vérifié contre `entry.sha256` sauf si `TODO_J4`)
+  - `CancellationToken` partagé via `DownloadManager` (pause/cancel sans perte)
+  - Throttle events 200 ms (anti-spam IPC)
+  - Écrit `.part` puis renomme à la fin si hash OK
+  - Gestion 200 vs 206 (serveur ignore Range) avec truncate `.part` si recommencé
+  - 3 events Tauri : `model:download:progress` / `done` / `error`
+- **Registry persistant** `~/.cyonima/models/registry.json` :
+  - Arc<RwLock<RegistryFile>> partagé via AppState
+  - Flush atomique (temp + rename) pour éviter corruption sur crash
+  - `list_installed` réel renvoyant les modèles avec `installed_path`
+  - Tests : 9/9 (catalogue, registry upsert/list/remove, downloader manager init)
+- **IPC** : `model_download(model_id)` async, spawn tokio::task et retourne immédiatement après garde-fou hardware
+- **UI CatalogView** :
+  - Boutons Télécharger / Annuler / Réessayer / Bloqué (selon éligibilité + état)
+  - Barre de progression inline sous la ligne (largeur %, octets, vitesse Mo/s)
+  - Ligne d'erreur repliable
+  - Bouton "Rafraîchir" pour recharger le catalogue après install
+- **UI StatusBar** : "N téléchargements en cours" quand actifs
+- **DoD J4** : un clic sur Télécharger lance un download robuste, repreneable sur cancel/kill, vérifié en SHA256, enregistré dans le registry. Tente `gemma-4-e2b-it-qat-q4_0` (taille 3.4 Go) pour tester.
+
+### J4.5 — Backend candle GGUF built-in (à venir)
+- Câbler `LlamaCppProvider` via `candle-core` + `candle-transformers` pour l'inférence 100% offline sans dépendre d'Ollama.
+- Maintenant testable contre un vrai GGUF téléchargé via J4.
 
 ## J5 — Import modèles entreprise
 - UI "Importer un modèle"

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSessionsStore, type ToolCallItem } from "../store/sessions";
 import { NewSessionForm } from "../components/NewSessionForm";
 import { Wrench, CheckCircle2, XCircle, Loader2 } from "lucide-react";
@@ -57,6 +57,8 @@ export function SessionsView() {
     streaming,
     errors,
     creating,
+    loaded,
+    restoreMessages,
     createSession,
     cancelCreating,
     send,
@@ -66,10 +68,24 @@ export function SessionsView() {
   const [input, setInput] = useState("");
 
   const active = sessions.find((s) => s.id === activeSessionId);
+  const activeId = active?.id;
   const msgs = active ? messages[active.id] ?? [] : [];
   const calls = active ? toolCalls[active.id] ?? [] : [];
   const isStreaming = active ? streaming[active.id] ?? false : false;
   const error = active ? errors[active.id] ?? null : null;
+
+  // Quand l'utilisateur switch d'onglet : si les messages de la nouvelle
+  // active sont vides alors qu'elle n'a pas été juste créée (i.e. elle vient
+  // de la restore initiale), on recharge depuis SQLite.
+useEffect(() => {
+  if (!loaded || !activeId) return;
+  const current = messages[activeId];
+  if (current === undefined) {
+    void restoreMessages(activeId);
+  }
+  // On ne dépend que de `activeId` pour ne refetch qu'au changement d'onglet.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [activeId, loaded]);
 
   if (creating) {
     return (

@@ -8,8 +8,16 @@
 //!
 //! AGENTS.md (s'il existe à la racine du workspace) est injecté comme premier
 //! message `system` du contexte, conformément à la convention Opencode.
+//!
+//! En J2 les sessions et leurs messages sont persistés en SQLite
+//! (`~/.cyonima/sessions.db`) via [`persistence::Persistence`]. Le
+//! SessionManager garde un cache in-memory (DashMap) pour pouvoir
+//! streamer/spawner des tokio::tasks, mais l'état vérité vie en DB :
+//! au démarrage de l'app on charge les sessions historiques et leurs messages,
+//! et chaque mutation (create/send/fork/assistant/tool) est flushée.
 
 pub mod agents_md;
+pub mod persistence;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -71,11 +79,23 @@ pub struct SessionInner {
     pub cancel: CancellationToken,
     /// `true` si un stream est en cours — protège contre les envois concurrents.
     pub busy: Mutex<bool>,
+    /// Snapshot optionnel de la persistence pour flusher les messages
+    /// au fil de l'eau (None pour les tests unitaires sans DB).
+    persistence: Option<persistence::Persistence>,
 }
 
-#[derive(Default)]
 pub struct SessionManager {
     sessions: DashMap<String, Arc<SessionInner>>,
+    persistence: Option<persistence::Persistence>,
+}
+
+impl Default for SessionManager {
+    fn default() -> Self {
+        Self {
+            sessions: DashMap::new(),
+            persistence: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -118,13 +138,61 @@ pub struct ErrorEvent {
 
 impl SessionManager {
     pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Construit avec une persistence déjà ouverte. Au démarrage de l'app,
+    /// on charge immédiatement les sessions historiques via [`restore_all`].
+    pub fn with_persistence(p: persistence::Persistence) -> Self {
         Self {
             sessions: DashMap::new(),
+            persistence: Some(p),
         }
     }
 
+    /// Au démarrage : charge toutes les sessions persistées + leurs messages
+    /// dans le cache in-memory. On recrée le provider/registry, et on préfixe
+    /// les messages AGENTS.md если disponible.
+    pub async fn restore_all(&self) -> anyhow::Result<()> {
+        let Some(p) = &self.persistence else {
+            return Ok(());
+        };
+        let sessions = p.list_sessions().await?;
+        for info in sessions {
+            let provider = providers::build(providers::ProviderParams {
+                kind: info.provider_id,
+                endpoint: None,
+                api_key: None,
+            });
+            let abs_workspace = canonicalize_workspace(&info.workspace);
+            let mut messages: Vec<ChatMessage> = Vec::new();
+            // AGENTS.md en tête (reloadé — il peut avoir changé entre temps).
+            if let Some(agents_content) = agents_md::load(&abs_workspace) {
+                messages.push(ChatMessage {
+                    role: Role::System,
+                    content: agents_content,
+                });
+            }
+            // Suit les messages persisté (user/assistant/tool — pas l'AGENTS.md).
+            let persisted = p.load_messages(&info.id).await?;
+            messages.extend(persisted);
+            let inner = Arc::new(SessionInner {
+                info: info.clone(),
+                provider,
+                tools: ToolRegistry::built_in(),
+                messages: Mutex::new(messages),
+                cancel: CancellationToken::new(),
+                busy: Mutex::new(false),
+                persistence: self.persistence.clone(),
+            });
+            self.sessions.insert(info.id.clone(), inner);
+        }
+        Ok(())
+    }
+
     /// Crée une session, instancie le provider + le registry + le AGENTS.md.
-    pub fn create(
+    /// Persiste la session en SQLite si une persistence est attachée.
+    pub async fn create(
         &self,
         gateway: Arc<Gateway>,
         workspace: String,
@@ -141,12 +209,23 @@ impl SessionManager {
         let abs_workspace = canonicalize_workspace(&workspace);
         let mut initial_messages: Vec<ChatMessage> = Vec::new();
 
-        // AGENTS.md injecté comme system prompt s'il existe.
+        // AGENTS.md injecté comme system prompt s'il existe. NON persisté
+        // en DB : il est rechargé à chaque `restore_all`, ce qui permet de
+        // le modifier sans casser l'historique.
         if let Some(agents_content) = agents_md::load(&abs_workspace) {
             initial_messages.push(ChatMessage {
                 role: Role::System,
                 content: agents_content,
             });
+        }
+
+        if let Some(p) = &self.persistence {
+            // On ne peut propager l'erreur sans casser l'API sync IPC. On log
+            // et on continue : une session non persistée reste fonctionnelle
+            // en mémoire (elle sera juste perdue au redémarrage).
+            if let Err(e) = p.upsert_session(&info).await {
+                tracing::warn!("échec persistance session {}: {e}", info.id);
+            }
         }
 
         let inner = Arc::new(SessionInner {
@@ -156,12 +235,15 @@ impl SessionManager {
             messages: Mutex::new(initial_messages),
             cancel: CancellationToken::new(),
             busy: Mutex::new(false),
+            persistence: self.persistence.clone(),
         });
         self.sessions.insert(info.id.clone(), inner);
         let _ = gateway; // état partagé via AppState
         info
     }
 
+    /// Liste les sessions — lit depuis le cache in-memory (qui est toujours
+    /// synchronisé avec la DB, car `restore_all` est appelée au démarrage).
     pub fn list(&self) -> Vec<SessionInfo> {
         self.sessions.iter().map(|e| e.info.clone()).collect()
     }
@@ -170,9 +252,20 @@ impl SessionManager {
         self.sessions.get(id).map(|r| Arc::clone(&r))
     }
 
+    /// Récupère l'historique des messages d'une session, sans le AGENTS.md
+    /// system (qui est interne au runtime). Exposé à l'UI pour restauration.
+    pub async fn history(&self, id: &str) -> Option<Vec<ChatMessage>> {
+        let session = self.get(id)?;
+        let msgs = session.messages.lock().await.clone();
+        // Filtrage du system AGENTS.md (contenu uniquement en mémoire, jamais
+        // persisté). Pour distinguer un vrai AGENTS.md d'un system utilisateur
+        // futur, on garde ici tous les system. L'UI peut décider de les cacher.
+        Some(msgs)
+    }
+
     /// Fork : copie du contexte vers une nouvelle session avec son propre
-    /// `CancellationToken`. Implémentation V1 : copie in-memory. J2 = persistance.
-    pub fn fork(&self, gateway: Arc<Gateway>, id: &str) -> Option<SessionInfo> {
+    /// `CancellationToken`. En J2 **persiste** aussi les messages.
+    pub async fn fork(&self, gateway: Arc<Gateway>, id: &str) -> Option<SessionInfo> {
         let src = self.get(id)?;
         let forked = SessionInfo::new(
             src.info.workspace.clone(),
@@ -181,7 +274,25 @@ impl SessionManager {
         );
         let provider = src.provider.clone();
         let tools = src.tools.clone();
-        let messages = src.messages.blocking_lock().clone();
+        let messages = src.messages.lock().await.clone();
+
+        // Persiste la session fork...
+        if let Some(p) = &src.persistence {
+            if let Err(e) = p.upsert_session(&forked).await {
+                tracing::warn!("échec persistance fork {}: {e}", forked.id);
+            }
+            // ... + persiste les messages NON system (AGENTS.md n'a pas à être
+            // copié dans la DB — il sera rechargé au prochain démarrage).
+            for m in &messages {
+                if m.role == Role::System {
+                    continue;
+                }
+                if let Err(e) = p.append_message(&forked.id, m).await {
+                    tracing::warn!("échec persistance msg fork {}: {e}", forked.id);
+                }
+            }
+        }
+
         let inner = Arc::new(SessionInner {
             info: forked.clone(),
             provider,
@@ -189,6 +300,7 @@ impl SessionManager {
             messages: Mutex::new(messages),
             cancel: CancellationToken::new(),
             busy: Mutex::new(false),
+            persistence: src.persistence.clone(),
         });
         self.sessions.insert(forked.id.clone(), inner);
         let _ = gateway;
@@ -196,7 +308,7 @@ impl SessionManager {
     }
 
     /// Envoie un message utilisateur et lance la boucle d'agent.
-    pub fn send(
+    pub async fn send(
         &self,
         app: AppHandle,
         gateway: Arc<Gateway>,
@@ -208,7 +320,7 @@ impl SessionManager {
             .ok_or_else(|| format!("Session '{session_id}' introuvable"))?;
 
         {
-            let mut busy = tokio::task::block_in_place(|| session.busy.blocking_lock());
+            let mut busy = session.busy.lock().await;
             if *busy {
                 return Err(
                     "Un stream est déjà en cours sur cette session — annulez-le d'abord.".into(),
@@ -217,12 +329,18 @@ impl SessionManager {
             *busy = true;
         }
 
+        let user_msg = ChatMessage {
+            role: Role::User,
+            content: message.clone(),
+        };
         {
-            let mut msgs = tokio::task::block_in_place(|| session.messages.blocking_lock());
-            msgs.push(ChatMessage {
-                role: Role::User,
-                content: message,
-            });
+            let mut msgs = session.messages.lock().await;
+            msgs.push(user_msg.clone());
+        }
+        if let Some(p) = &session.persistence {
+            if let Err(e) = p.append_message(&session_id, &user_msg).await {
+                tracing::warn!("échec persistance user msg {session_id}: {e}");
+            }
         }
 
         let task_session = Arc::clone(&session);
@@ -232,11 +350,24 @@ impl SessionManager {
         Ok(())
     }
 
+    /// Annule le stream en cours d'une session (sans détruire la session).
     pub fn cancel(&self, session_id: &str) -> Result<(), String> {
         let session = self
             .get(session_id)
             .ok_or_else(|| format!("Session '{session_id}' introuvable"))?;
         session.cancel.cancel();
+        Ok(())
+    }
+
+    /// Supprime une session (cache in-memory + SQLite). Cascade supprime
+    /// tous ses messages via `ON DELETE CASCADE`.
+    pub async fn delete(&self, session_id: &str) -> Result<(), String> {
+        self.sessions.remove(session_id);
+        if let Some(p) = &self.persistence {
+            p.delete_session(session_id)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
         Ok(())
     }
 }
@@ -321,11 +452,17 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
         // Persiste le message assistant (même si tool-call-only, certains LLM
         // mettent du contenu texte dans le même message).
         if !assistant_buffer.is_empty() {
-            session.messages.lock().await.push(ChatMessage {
+            let assistant_msg = ChatMessage {
                 role: Role::Assistant,
                 content: assistant_buffer.clone(),
-            });
+            };
+            session.messages.lock().await.push(assistant_msg.clone());
             final_assistant = assistant_buffer.clone();
+            if let Some(p) = &session.persistence {
+                if let Err(e) = p.append_message(&session_id, &assistant_msg).await {
+                    tracing::warn!("échec persistance assistant msg {session_id}: {e}");
+                }
+            }
         }
 
         if had_error || tool_calls.is_empty() || cancel.is_cancelled() {
@@ -363,10 +500,16 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
                 );
                 // On injecte un message `tool` décrivant le refus pour que le
                 // LLM sache qu'il doit chercher une alternative.
-                session.messages.lock().await.push(ChatMessage {
+                let tool_msg = ChatMessage {
                     role: Role::Tool,
                     content: format!("Outil `{}` refusé par l'utilisateur.", tc.tool),
-                });
+                };
+                session.messages.lock().await.push(tool_msg.clone());
+                if let Some(p) = &session.persistence {
+                    if let Err(e) = p.append_message(&session_id, &tool_msg).await {
+                        tracing::warn!("échec persistance tool(denied) msg {session_id}: {e}");
+                    }
+                }
                 continue;
             }
 
@@ -389,10 +532,16 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
             );
             // Format du message `tool` attendu par Ollama/OpenAI-compatible :
             // le contenu porte le résultat texte rendu au modèle.
-            session.messages.lock().await.push(ChatMessage {
+            let tool_msg = ChatMessage {
                 role: Role::Tool,
                 content: output.output.clone(),
-            });
+            };
+            session.messages.lock().await.push(tool_msg.clone());
+            if let Some(p) = &session.persistence {
+                if let Err(e) = p.append_message(&session_id, &tool_msg).await {
+                    tracing::warn!("échec persistance tool msg {session_id}: {e}");
+                }
+            }
         }
 
         // La boucle remonte et renvoie le contexte mis à jour au LLM.

@@ -23,12 +23,25 @@ interface SessionsState {
   streaming: Record<string, boolean>;
   errors: Record<string, string | null>;
   creating: boolean;
+  loaded: boolean;
+
+  /// Au démarrage : charge les sessions persistées et, pour la dernière
+  /// active (la plus récente), restaure aussi ses messages.
+  loadAll: () => Promise<void>;
+
+  /// Restaure les messages d'une session depuis le backend SQLite.
+  restoreMessages: (sessionId: string) => Promise<void>;
 
   startCreating: () => void;
   cancelCreating: () => void;
-  createSession: (p: { workspace: string; modelId: string; providerId: ProviderId }) => Promise<void>;
+  createSession: (p: {
+    workspace: string;
+    modelId: string;
+    providerId: ProviderId;
+  }) => Promise<void>;
 
   setActive: (id: string | null) => void;
+  deleteSession: (sessionId: string) => Promise<void>;
   appendMessage: (sessionId: string, msg: ChatMessage) => void;
   appendToken: (sessionId: string, token: string) => void;
   setStreaming: (sessionId: string, streaming: boolean) => void;
@@ -39,6 +52,7 @@ interface SessionsState {
 
   send: (sessionId: string, message: string) => Promise<void>;
   cancel: (sessionId: string) => Promise<void>;
+  forkSession: (sessionId: string) => Promise<void>;
 }
 
 export const useSessionsStore = create<SessionsState>((set, get) => ({
@@ -49,6 +63,42 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   streaming: {},
   errors: {},
   creating: false,
+  loaded: false,
+
+  loadAll: async () => {
+    try {
+      const list = await ipc.sessionList();
+      // Initialise les vues vides pour chaque session restaurée.
+      const messages: Record<string, ChatMessage[]> = {};
+      const toolCalls: Record<string, ToolCallItem[]> = {};
+      const streaming: Record<string, boolean> = {};
+      const errors: Record<string, string | null> = {};
+      for (const s of list) {
+        messages[s.id] = [];
+        toolCalls[s.id] = [];
+        streaming[s.id] = false;
+        errors[s.id] = null;
+      }
+      const activeId = list.length > 0 ? list[0].id : null;
+      set({ sessions: list, activeSessionId: activeId, messages, toolCalls, streaming, errors, loaded: true });
+      // Restaure aussi les messages de la plus récente.
+      if (activeId) {
+        await get().restoreMessages(activeId);
+      }
+    } catch (e) {
+      console.error("sessionList error", e);
+      set({ loaded: true });
+    }
+  },
+
+  restoreMessages: async (sessionId) => {
+    try {
+      const msgs = await ipc.sessionHistory({ sessionId });
+      set((st) => ({ messages: { ...st.messages, [sessionId]: msgs ?? [] } }));
+    } catch (e) {
+      console.error("sessionHistory error", e);
+    }
+  },
 
   startCreating: () => set({ creating: true }),
   cancelCreating: () => set({ creating: false }),
@@ -67,6 +117,37 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   },
 
   setActive: (id) => set({ activeSessionId: id, creating: false }),
+
+  deleteSession: async (sessionId) => {
+    try {
+      await ipc.sessionDelete({ sessionId });
+    } catch {
+      /* ignore */
+    }
+    set((st) => {
+      const sessions = st.sessions.filter((s) => s.id !== sessionId);
+      const messages = { ...st.messages };
+      delete messages[sessionId];
+      const toolCalls = { ...st.toolCalls };
+      delete toolCalls[sessionId];
+      const streaming = { ...st.streaming };
+      delete streaming[sessionId];
+      const errors = { ...st.errors };
+      delete errors[sessionId];
+      const activeSessionId =
+        st.activeSessionId === sessionId
+          ? sessions.length > 0
+            ? sessions[0].id
+            : null
+          : st.activeSessionId;
+      // Si la nouvelle active n'a pas encore ses messages, on les charge.
+      if (activeSessionId && activeSessionId !== st.activeSessionId) {
+        void get().restoreMessages(activeSessionId);
+      }
+      return { sessions, messages, toolCalls, streaming, errors, activeSessionId };
+    });
+  },
+
   appendMessage: (sessionId, msg) =>
     set((st) => ({
       messages: {
@@ -115,7 +196,10 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       toolCalls: { ...s.toolCalls, [sessionId]: [] },
       messages: {
         ...s.messages,
-        [sessionId]: [...(s.messages[sessionId] ?? []), { role: "user" as const, content: message }],
+        [sessionId]: [
+          ...(s.messages[sessionId] ?? []),
+          { role: "user" as const, content: message },
+        ],
       },
     }));
     try {
@@ -135,5 +219,24 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       /* ignore */
     }
     set((s) => ({ streaming: { ...s.streaming, [sessionId]: false } }));
+  },
+
+  forkSession: async (sessionId) => {
+    try {
+      const forked = await ipc.sessionFork({ sessionId });
+      if (!forked) return;
+      // Restaure les messages de la fork (la DB les a déjà persistés).
+      set((st) => ({
+        sessions: [...st.sessions, forked],
+        activeSessionId: forked.id,
+        messages: { ...st.messages, [forked.id]: [] },
+        toolCalls: { ...st.toolCalls, [forked.id]: [] },
+        streaming: { ...st.streaming, [forked.id]: false },
+        errors: { ...st.errors, [forked.id]: null },
+      }));
+      await get().restoreMessages(forked.id);
+    } catch (e) {
+      console.error("sessionFork error", e);
+    }
   },
 }));

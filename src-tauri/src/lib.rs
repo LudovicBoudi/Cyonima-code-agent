@@ -14,9 +14,11 @@ pub mod providers;
 pub mod sessions;
 pub mod tools;
 
+use tauri::Manager;
 use tracing_subscriber::EnvFilter;
 
 /// Monte l'application Tauri.
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -24,16 +26,30 @@ pub fn run() {
         )
         .init();
 
-    let app_state = ipc::AppState::default();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
-        .manage(app_state)
+        .setup(|app| {
+            // `AppState::init` est async (ouverture du registry sur disque,
+            // création du DownloadManager). On l'exécute via un runtime
+            // tokio dédié pour ne pas bloquer le setup thread.
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("échec construction runtime tokio pour AppState::init");
+            let app_state = rt
+                .block_on(ipc::AppState::init())
+                .expect("échec initialisation AppState (registry / downloads)");
+            drop(rt);
+            app.manage(app_state);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             ipc::session_create,
             ipc::session_send,
             ipc::session_cancel,
             ipc::session_fork,
+            ipc::session_delete,
+            ipc::session_history,
             ipc::session_list,
             ipc::model_list_installed,
             ipc::model_catalog_list,
@@ -44,7 +60,6 @@ pub fn run() {
             ipc::hardware_get,
             ipc::hardware_can_run_model,
         ])
-        .setup(|_app| Ok(()))
         .run(tauri::generate_context!())
         .expect("erreur au lancement de l'application Tauri");
 }

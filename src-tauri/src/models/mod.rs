@@ -1,19 +1,15 @@
 //! Registry, catalogue et downloader de modèles.
 //!
 //! Cf cahier des charges :
-//! - **< 50 Mo** : embarqués en ressources (`src-tauri/resources/`). Actuellement
-//!   un embedder `all-MiniLM-L6-v2` Q8 pour la recherche sémantique zero-config.
+//! - **< 50 Mo** : embarqués en ressources (`src-tauri/resources/`).
 //! - **> 50 Mo open source** : listés dans le catalogue TOML embarqué
-//!   (`docs/models-catalog.toml`), parsé une fois au démarrage via `include_str!`.
-//!   Ils sont téléchargeables via le downloader (J4) ou, si un `ollama_tag` est
-//!   renseigné, utilisables directement via le provider Ollama sans download
-//!   propre à Cyonima (l'utilisateur fait `ollama pull <tag>`).
+//!   (`docs/models-catalog.toml`), parsé une fois au démarrage via
+//!   `include_str!`. Téléchargeables via [`downloader::DownloadManager`].
 //! - **Entreprise / custom** : [`import_custom`] enregistre un GGUF local
-//!   dans le registry.
-//!
-//! Le downloader concret (HTTP range + SHA256 + reprise) arrive en J4. La
-//! lecture du catalogue, elle, est fonctionnelle dès J1.5 et exposée via
-//! `model_catalog_list` IPC.
+//!   dans le [`registry::Registry`].
+
+pub mod downloader;
+pub mod registry;
 
 use serde::{Deserialize, Serialize};
 
@@ -32,15 +28,17 @@ pub struct ModelInfo {
     pub license: String,
     /// RAM minimum recommandée en Go (CPU pur). Garde-fou côté backend.
     pub ram_min_gb: u32,
+    /// `true` si enregistré dans le registry ET fichier encore présent sur disque.
     pub installed: bool,
     /// Tag Ollama correspondant, si applicable (ex: "gemma4:12b").
-    /// Quand renseigné, l'UI permet d'utiliser le modèle directement via
-    /// Ollama sans téléchargement Cyonima.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub ollama_tag: Option<String>,
     /// URL de téléchargement du GGUF HuggingFace, si applicable.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub url: Option<String>,
+    /// Chemin absolu du .gguf si installé.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub installed_path: Option<String>,
 }
 
 /// Entrée du catalogue distant téléchargeable (cf `docs/models-catalog.toml`).
@@ -74,19 +72,43 @@ fn parse_catalog() -> Vec<CatalogEntry> {
     }
 }
 
-/// Renvoie les modèles installés localement. Vraie implémentation en J4 —
-/// pour l'instant on lit le dossier `models` configurable et on signale
-/// ceux dont on trouve un `.gguf`. J1.5 : retour vide (le downloader n'existe
-/// pas encore), mais l'UI peut afficher le catalogue dès maintenant.
-pub fn list_installed() -> Vec<ModelInfo> {
-    Vec::new()
+/// Renvoie les entrées brutes du catalogue (avec URL + SHA256). Utilisé par
+/// le `DownloadManager` pour récupérer l'entry à télécharger.
+pub fn find_catalog_entry(id: &str) -> Option<CatalogEntry> {
+    parse_catalog().into_iter().find(|e| e.id == id)
 }
 
-/// Renvoie le catalogue complet embarqué dans le binaire. Appelé par l'IPC
-/// `model_catalog_list`. Aucun accès filesystem : le TOML est `include_str!`.
-pub fn list_catalog() -> Vec<ModelInfo> {
+/// Renvoie le catalogue avec statut `installed` calculé à partir du registry.
+pub async fn list_catalog(registry: &registry::Registry) -> Vec<ModelInfo> {
+    let installed = registry.list().await;
     parse_catalog()
         .into_iter()
+        .map(|e| {
+            let inst = installed.iter().find(|i| i.id == e.id);
+            ModelInfo {
+                id: e.id.clone(),
+                name: e.name.clone(),
+                size_bytes: e.size_bytes,
+                quantization: e.quantization.clone(),
+                license: e.license.clone(),
+                ram_min_gb: e.ram_min_gb,
+                installed: inst.is_some(),
+                ollama_tag: e.ollama_tag.clone(),
+                url: Some(e.url.clone()).filter(|u| !u.is_empty()),
+                installed_path: inst.map(|i| i.path.clone()),
+            }
+        })
+        .collect()
+}
+
+/// Renvoie les modèles installés (depuis le registry), augmentés d'une
+/// vérification que le .gguf existe encore sur disque.
+pub async fn list_installed(registry: &registry::Registry) -> Vec<ModelInfo> {
+    registry
+        .list()
+        .await
+        .into_iter()
+        .filter(|e| std::path::Path::new(&e.path).exists())
         .map(|e| ModelInfo {
             id: e.id,
             name: e.name,
@@ -94,16 +116,19 @@ pub fn list_catalog() -> Vec<ModelInfo> {
             quantization: e.quantization,
             license: e.license,
             ram_min_gb: e.ram_min_gb,
-            installed: false,
+            installed: true,
             ollama_tag: e.ollama_tag,
             url: Some(e.url).filter(|u| !u.is_empty()),
+            installed_path: Some(e.path),
         })
         .collect()
 }
 
-/// Placeholder J5 — import d'un GGUF entreprise. Vraie implémentation en J5.
-pub fn import_custom(path: &str) -> anyhow::Result<ModelInfo> {
-    // Vérifie juste que le chemin pointe vers un fichier .gguf existant.
+/// Import d'un GGUF entreprise/personnel. Vérifie seulement que le chemin
+/// pointe vers un fichier .gguf lisible. L'enregistrement dans le registry
+/// est fait par l'IPC `model_import_custom` qui appelle cette fonction puis
+/// `registry.upsert`.
+pub fn validate_custom(path: &str) -> anyhow::Result<registry::RegistryEntry> {
     let p = std::path::Path::new(path);
     if !p.exists() {
         anyhow::bail!("Fichier introuvable: {path}");
@@ -122,16 +147,18 @@ pub fn import_custom(path: &str) -> anyhow::Result<ModelInfo> {
         .unwrap_or("custom")
         .to_string();
     let size_bytes = std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
-    Ok(ModelInfo {
+    Ok(registry::RegistryEntry {
         id: format!("custom/{name}"),
         name,
+        path: p.to_string_lossy().to_string(),
         size_bytes,
+        sha256: String::new(),
         quantization: "unknown".into(),
         license: "Unspecified".into(),
         ram_min_gb: 0,
-        installed: true,
         ollama_tag: None,
-        url: Some(path.into()),
+        url: String::new(),
+        downloaded_at: chrono::Utc::now(),
     })
 }
 
@@ -141,9 +168,8 @@ mod tests {
 
     #[test]
     fn catalog_parses_and_has_entries() {
-        let catalog = list_catalog();
+        let catalog = parse_catalog();
         assert!(!catalog.is_empty(), "le catalogue ne doit pas être vide");
-        // Chaque entrée doit avoir un id unique.
         let mut ids: Vec<_> = catalog.iter().map(|m| m.id.clone()).collect();
         let total = ids.len();
         ids.sort();
@@ -153,7 +179,7 @@ mod tests {
 
     #[test]
     fn gemma4_entries_have_apache_license() {
-        let catalog = list_catalog();
+        let catalog = parse_catalog();
         let g4: Vec<_> = catalog
             .iter()
             .filter(|m| m.id.starts_with("gemma-4-"))
@@ -170,8 +196,14 @@ mod tests {
     }
 
     #[test]
-    fn import_custom_rejects_missing() {
-        let r = import_custom("nonexistent.gguf");
+    fn find_catalog_entry_returns_some_for_known() {
+        assert!(find_catalog_entry("gemma-4-12b-it-qat-q4_0").is_some());
+        assert!(find_catalog_entry("inexistant-id").is_none());
+    }
+
+    #[test]
+    fn validate_custom_rejects_missing() {
+        let r = validate_custom("nonexistent.gguf");
         assert!(r.is_err());
     }
 }

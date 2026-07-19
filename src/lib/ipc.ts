@@ -38,6 +38,25 @@ export interface DownloadProgress {
   total: number;
 }
 
+export interface DownloadProgressEvent {
+  modelId: string;
+  downloaded: number;
+  total: number;
+  bytesPerSecond: number;
+}
+
+export interface DownloadDoneEvent {
+  modelId: string;
+  path: string;
+  sha256: string;
+  sizeBytes: number;
+}
+
+export interface DownloadErrorEvent {
+  modelId: string;
+  error: string;
+}
+
 export interface HardwareInfo {
   totalRamBytes: number;
   totalRamGb: number;
@@ -56,13 +75,15 @@ export const ipc = {
   sessionSend: (p: { sessionId: string; message: string }) =>
     invoke<void>("session_send", p),
   sessionCancel: (p: { sessionId: string }) => invoke<void>("session_cancel", p),
-  sessionFork: (p: { sessionId: string }) => invoke<SessionInfo>("session_fork", p),
+  sessionFork: (p: { sessionId: string }) => invoke<SessionInfo | null>("session_fork", p),
+  sessionHistory: (p: { sessionId: string }) =>
+    invoke<ChatMessage[]>("session_history", p),
+  sessionDelete: (p: { sessionId: string }) => invoke<void>("session_delete", p),
   sessionList: () => invoke<SessionInfo[]>("session_list"),
 
   modelListInstalled: () => invoke<ModelInfo[]>("model_list_installed"),
   modelCatalogList: () => invoke<ModelInfo[]>("model_catalog_list"),
-  modelDownload: (p: { modelId: string; ramMinGb?: number }) =>
-    invoke<void>("model_download", p),
+  modelDownload: (p: { modelId: string }) => invoke<void>("model_download", p),
   modelDownloadCancel: (p: { modelId: string }) =>
     invoke<void>("model_download_cancel", p),
   modelImportCustom: (p: { path: string }) =>
@@ -106,8 +127,16 @@ export function onSessionToolResult(
   return listen("session:tool_result", (ev) => cb(ev.payload as never));
 }
 
-export function onDownloadProgress(cb: (e: DownloadProgress) => void): Promise<UnlistenFn> {
+export function onDownloadProgress(cb: (e: DownloadProgressEvent) => void): Promise<UnlistenFn> {
   return listen("model:download:progress", (ev) => cb(ev.payload as never));
+}
+
+export function onDownloadDone(cb: (e: DownloadDoneEvent) => void): Promise<UnlistenFn> {
+  return listen("model:download:done", (ev) => cb(ev.payload as never));
+}
+
+export function onDownloadError(cb: (e: DownloadErrorEvent) => void): Promise<UnlistenFn> {
+  return listen("model:download:error", (ev) => cb(ev.payload as never));
 }
 
 export interface PermissionRequestEvent {
