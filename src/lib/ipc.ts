@@ -92,6 +92,17 @@ export const ipc = {
   permissionRespond: (p: { requestId: string; decision: "allow" | "deny" }) =>
     invoke<void>("permission_respond", p),
 
+  providerSetApiKey: (p: { provider: string; apiKey: string }) =>
+    invoke<void>("provider_set_api_key", p),
+  providerGetApiKey: (p: { provider: string }) =>
+    invoke<string | null>("provider_get_api_key", p),
+  providerHasApiKey: (p: { provider: string }) =>
+    invoke<boolean>("provider_has_api_key", p),
+  providerDeleteApiKey: (p: { provider: string }) =>
+    invoke<void>("provider_delete_api_key", p),
+  providerListConfigured: () =>
+    invoke<string[]>("provider_list_configured"),
+
   hardwareGet: () => invoke<HardwareInfo>("hardware_get"),
   hardwareCanRunModel: (ramMinGb: number) =>
     invoke<boolean>("hardware_can_run_model", { ramMinGb }),

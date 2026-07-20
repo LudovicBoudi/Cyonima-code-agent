@@ -226,3 +226,35 @@ fn default_models_dir() -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     home.join(".cyonima").join("models")
 }
+
+// ===== API Keys (keyring OS) =====
+
+#[tauri::command]
+pub fn provider_set_api_key(provider: String, api_key: String) -> Result<(), String> {
+    crate::secrets::set_key(&provider, &api_key).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn provider_get_api_key(provider: String) -> Result<Option<String>, String> {
+    Ok(crate::secrets::get_key(&provider))
+}
+
+#[tauri::command]
+pub fn provider_has_api_key(provider: String) -> Result<bool, String> {
+    Ok(crate::secrets::has_key(&provider))
+}
+
+#[tauri::command]
+pub fn provider_delete_api_key(provider: String) -> Result<(), String> {
+    crate::secrets::delete_key(&provider).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn provider_list_configured() -> Result<Vec<String>, String> {
+    let providers = ["openai", "anthropic", "gemini", "openai_compat"];
+    Ok(providers
+        .iter()
+        .filter(|p| crate::secrets::has_key(p))
+        .map(|p| p.to_string())
+        .collect())
+}

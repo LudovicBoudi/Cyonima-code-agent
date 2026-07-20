@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { SessionsView } from "./pages/SessionsView";
 import { CatalogView } from "./pages/CatalogView";
 import { ImportModelView } from "./pages/ImportModelView";
+import { SettingsView } from "./pages/SettingsView";
 import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { PermissionDialog } from "./components/PermissionDialog";
@@ -18,7 +19,7 @@ import {
   onDownloadError,
 } from "./lib/ipc";
 
-type View = "sessions" | "catalog" | "import";
+type View = "sessions" | "catalog" | "import" | "settings";
 
 export default function App() {
   const [view, setView] = useState<View>("sessions");
@@ -111,6 +112,7 @@ export default function App() {
           {view === "sessions" && <SessionsView />}
           {view === "catalog" && <CatalogView />}
           {view === "import" && <ImportModelView />}
+          {view === "settings" && <SettingsView />}
         </main>
       </div>
       <StatusBar />

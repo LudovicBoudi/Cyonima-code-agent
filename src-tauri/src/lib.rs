@@ -61,6 +61,11 @@ pub fn run() {
             ipc::permission_respond,
             ipc::hardware_get,
             ipc::hardware_can_run_model,
+            ipc::provider_set_api_key,
+            ipc::provider_get_api_key,
+            ipc::provider_has_api_key,
+            ipc::provider_delete_api_key,
+            ipc::provider_list_configured,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de l'application Tauri");

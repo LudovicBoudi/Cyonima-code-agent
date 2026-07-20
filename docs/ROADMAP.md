@@ -121,10 +121,11 @@ Les jalons sont prévus pour être livrés dans l'ordre. Chacun a des critères 
 - Détection automatique des GGUF (filtre *.gguf)  ✅
 - **DoD** : un GGUF tiers Windows est utilisable après import.  ✅
 
-## J6 — API distantes
-- `OpenAIProvider`, `AnthropicProvider`, `GeminiProvider`, `OpenAICompatProvider`
-- Settings UI pour provider + clé (keyring)
-- **DoD** : chat avec GPT-4o, Claude 3.5 et Gemini Pro via clés utilisateur.
+## J6 — API distantes  ✅
+- `OpenAIProvider`, `AnthropicProvider`, `GeminiProvider`, `OpenAICompatProvider`  ✅
+- IPC `provider_set_api_key` / `get` / `has` / `delete` / `list_configured`  ✅
+- Settings UI pour provider + clé (keyring OS)  ✅
+- **DoD** : chat avec GPT-4o, Claude 3.5 et Gemini Pro via clés utilisateur.  ✅
 
 ## J7 — Ollama provider
 - Détection auto (`http://localhost:11434`)
