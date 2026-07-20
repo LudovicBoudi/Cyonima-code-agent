@@ -1,5 +1,5 @@
 import { useSessionsStore } from "../store/sessions";
-import { Plus, Terminal, BookOpen, X, GitFork } from "lucide-react";
+import { Plus, Terminal, BookOpen, X, GitFork, Upload } from "lucide-react";
 
 const PROVIDER_LABEL: Record<string, string> = {
   llama_cpp: "llama.cpp",
@@ -10,7 +10,7 @@ const PROVIDER_LABEL: Record<string, string> = {
   openai_compat: "OpenAI-compat",
 };
 
-type View = "sessions" | "catalog";
+type View = "sessions" | "catalog" | "import";
 
 export function Sidebar({
   view,
@@ -45,6 +45,14 @@ export function Sidebar({
           }`}
         >
           <BookOpen size={14} /> Catalogue de modèles
+        </button>
+        <button
+          onClick={() => onView("import")}
+          className={`mb-1 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs ${
+            view === "import" ? "bg-accent/20 text-fg" : "text-muted hover:bg-border/40"
+          }`}
+        >
+          <Upload size={14} /> Importer un modèle
         </button>
       </nav>
 

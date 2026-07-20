@@ -87,10 +87,11 @@ enum AnthropicEvent {
     Error { error: AnthropicErrorBody },
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct AnthropicContentBlock {
-    #[serde(default, rename = "type")]
-    kind: Option<String>,
+    #[serde(rename = "type")]
+    kind: String,
     #[serde(default)]
     id: Option<String>,
     #[serde(default)]
@@ -216,8 +217,7 @@ impl Provider for AnthropicProvider {
                 match chunk_res {
                     Ok(bytes) => {
                         buffer.extend_from_slice(&bytes);
-                        loop {
-                            let Some(nl) = buffer.iter().position(|b| *b == b'\n') else { break };
+                        while let Some(nl) = buffer.iter().position(|b| *b == b'\n') {
                             let line: Vec<u8> = buffer.drain(..=nl).collect();
                             let line = std::str::from_utf8(&line).unwrap_or("").trim().to_string();
                             if line.is_empty() { continue; }
@@ -225,7 +225,7 @@ impl Provider for AnthropicProvider {
                             let Ok(parsed) = serde_json::from_str::<AnthropicEvent>(json) else { continue };
                             match parsed {
                                 AnthropicEvent::ContentBlockStart { index, content_block } => {
-                                    if content_block.kind.as_deref() == Some("tool_use") {
+                                    if content_block.kind == "tool_use" {
                                         if let Some(n) = content_block.name {
                                             tool_names.insert(index, n);
                                         }

@@ -196,8 +196,7 @@ impl Provider for OpenAiCompatProvider {
                 match chunk_res {
                     Ok(bytes) => {
                         buffer.extend_from_slice(&bytes);
-                        loop {
-                            let Some(nl) = buffer.iter().position(|b| *b == b'\n') else { break };
+                        while let Some(nl) = buffer.iter().position(|b| *b == b'\n') {
                             let line: Vec<u8> = buffer.drain(..=nl).collect();
                             let line = std::str::from_utf8(&line).unwrap_or("").trim().to_string();
                             if line.is_empty() { continue; }

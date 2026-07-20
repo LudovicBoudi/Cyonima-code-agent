@@ -115,11 +115,11 @@ Les jalons sont prévus pour être livrés dans l'ordre. Chacun a des critères 
 - Câbler `LlamaCppProvider` via `candle-core` + `candle-transformers` pour l'inférence 100% offline sans dépendre d'Ollama.
 - Maintenant testable contre un vrai GGUF téléchargé via J4.
 
-## J5 — Import modèles entreprise
-- UI "Importer un modèle"
-- Enregistrement metadata + chemin dans registry
-- Détection automatique des GGUF
-- **DoD** : un GGUF tiers Windows est utilisable après import.
+## J5 — Import modèles entreprise  ✅
+- UI "Importer un modèle" avec file picker natif (Tauri dialog plugin)  ✅
+- Enregistrement metadata + chemin dans registry  ✅ (validate_custom + IPC model_import_custom)
+- Détection automatique des GGUF (filtre *.gguf)  ✅
+- **DoD** : un GGUF tiers Windows est utilisable après import.  ✅
 
 ## J6 — API distantes
 - `OpenAIProvider`, `AnthropicProvider`, `GeminiProvider`, `OpenAICompatProvider`

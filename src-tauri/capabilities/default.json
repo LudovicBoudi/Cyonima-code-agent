@@ -9,6 +9,8 @@
     "core:event:allow-emit",
     "core:event:allow-listen",
     "core:event:allow-unlisten",
-    "store:default"
+    "store:default",
+    "dialog:default",
+    "dialog:allow-open"
   ]
 }

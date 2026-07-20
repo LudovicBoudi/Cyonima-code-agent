@@ -40,9 +40,9 @@ impl GeminiProvider {
 
 #[derive(Debug, Serialize)]
 struct GeminiRequest {
-    contents: Vec<GeminiContent>,
+    contents: Vec<GeminiReqContent>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    system_instruction: Option<GeminiContent>,
+    system_instruction: Option<GeminiReqContent>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "generationConfig")]
     generation_config: Option<GeminiGenerationConfig>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
@@ -50,14 +50,36 @@ struct GeminiRequest {
 }
 
 #[derive(Debug, Serialize)]
-struct GeminiContent {
+struct GeminiReqContent {
     role: String,
-    parts: Vec<GeminiPart>,
+    parts: Vec<GeminiReqPart>,
 }
 
 #[derive(Debug, Serialize)]
-struct GeminiPart {
+struct GeminiReqPart {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GeminiResContent {
+    #[allow(dead_code)]
+    role: String,
+    parts: Vec<GeminiResPart>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GeminiResPart {
+    #[serde(default)]
     text: String,
+    #[serde(default, rename = "functionCall")]
+    function_call: Option<GeminiFunctionCall>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GeminiFunctionCall {
+    name: String,
+    args: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -92,7 +114,7 @@ struct GeminiStreamChunk {
 #[derive(Debug, Deserialize)]
 struct GeminiCandidate {
     #[serde(default)]
-    content: Option<GeminiContent>,
+    content: Option<GeminiResContent>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -130,12 +152,12 @@ impl Provider for GeminiProvider {
         );
 
         // Séparation system vs conversation (Gemini utilise system_instruction).
-        let mut system_parts: Vec<GeminiPart> = Vec::new();
-        let mut contents: Vec<GeminiContent> = Vec::new();
+        let mut system_parts: Vec<GeminiReqPart> = Vec::new();
+        let mut contents: Vec<GeminiReqContent> = Vec::new();
         for m in &req.messages {
             match m.role {
                 super::Role::System => {
-                    system_parts.push(GeminiPart { text: m.content.clone() });
+                    system_parts.push(GeminiReqPart { text: Some(m.content.clone()) });
                 }
                 other => {
                     // Gemini utilise "user" et "model" (pas "assistant").
@@ -144,9 +166,9 @@ impl Provider for GeminiProvider {
                         super::Role::Tool => "user".into(), // pas de role tool natif, on inline
                         _ => other.as_str().into(),
                     };
-                    contents.push(GeminiContent {
+                    contents.push(GeminiReqContent {
                         role,
-                        parts: vec![GeminiPart { text: m.content.clone() }],
+                        parts: vec![GeminiReqPart { text: Some(m.content.clone()) }],
                     });
                 }
             }
@@ -157,7 +179,7 @@ impl Provider for GeminiProvider {
             system_instruction: if system_parts.is_empty() {
                 None
             } else {
-                Some(GeminiContent { role: "user".into(), parts: system_parts })
+                Some(GeminiReqContent { role: "user".into(), parts: system_parts })
             },
             generation_config: Some(GeminiGenerationConfig {
                 temperature: req.temperature,
@@ -214,8 +236,7 @@ impl Provider for GeminiProvider {
                 match chunk_res {
                     Ok(bytes) => {
                         buffer.extend_from_slice(&bytes);
-                        loop {
-                            let Some(nl) = buffer.iter().position(|b| *b == b'\n') else { break };
+                        while let Some(nl) = buffer.iter().position(|b| *b == b'\n') {
                             let line: Vec<u8> = buffer.drain(..=nl).collect();
                             let line = std::str::from_utf8(&line).unwrap_or("").trim().to_string();
                             if line.is_empty() { continue; }
@@ -230,6 +251,13 @@ impl Provider for GeminiProvider {
                                     for part in content.parts {
                                         if !part.text.is_empty() {
                                             yield ChatEvent::Token(part.text);
+                                        }
+                                        if let Some(fc) = part.function_call {
+                                            yield ChatEvent::ToolCall(super::ToolCall {
+                                                id: format!("gemini_call_{}", uuid::Uuid::new_v4()),
+                                                tool: fc.name,
+                                                arguments: fc.args,
+                                            });
                                         }
                                     }
                                 }

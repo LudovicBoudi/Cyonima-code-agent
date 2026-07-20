@@ -20,7 +20,7 @@ pub mod openai_compat;
 
 use async_trait::async_trait;
 use futures::stream::BoxStream;
-use futures::StreamExt;
+
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 

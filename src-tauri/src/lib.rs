@@ -29,6 +29,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // `AppState::init` est async (ouverture du registry sur disque,
             // création du DownloadManager). On l'exécute via un runtime

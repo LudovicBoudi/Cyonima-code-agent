@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { SessionsView } from "./pages/SessionsView";
 import { CatalogView } from "./pages/CatalogView";
+import { ImportModelView } from "./pages/ImportModelView";
 import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { PermissionDialog } from "./components/PermissionDialog";
@@ -17,7 +18,7 @@ import {
   onDownloadError,
 } from "./lib/ipc";
 
-type View = "sessions" | "catalog";
+type View = "sessions" | "catalog" | "import";
 
 export default function App() {
   const [view, setView] = useState<View>("sessions");
@@ -107,7 +108,9 @@ export default function App() {
       <div className="flex flex-1 overflow-hidden">
         <Sidebar view={view} onView={setView} />
         <main className="flex flex-1 flex-col overflow-hidden">
-          {view === "sessions" ? <SessionsView /> : <CatalogView />}
+          {view === "sessions" && <SessionsView />}
+          {view === "catalog" && <CatalogView />}
+          {view === "import" && <ImportModelView />}
         </main>
       </div>
       <StatusBar />
