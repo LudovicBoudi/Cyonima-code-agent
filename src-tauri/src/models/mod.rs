@@ -19,6 +19,7 @@ const CATALOG_TOML: &str = include_str!("../../../docs/models-catalog.toml");
 
 /// Modèle installé ou installable, exposé à l'UI via IPC.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ModelInfo {
     pub id: String,
     pub name: String,

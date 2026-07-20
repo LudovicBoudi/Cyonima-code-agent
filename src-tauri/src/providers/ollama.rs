@@ -93,6 +93,10 @@ struct OllamaChatChunk {
 struct OllamaChunkMessage {
     #[serde(default)]
     content: String,
+    /// Champ thinking/reasoning présent sur les modèles qui supportent le
+    /// reasoning (DeepSeek R1, Gemma 4, Qwen3, etc.). Ollama ≥ 0.7.
+    #[serde(default)]
+    thinking: String,
     #[serde(default)]
     tool_calls: Vec<OllamaChunkToolCall>,
 }
@@ -211,6 +215,9 @@ impl Provider for OllamaProvider {
                             if line_str.is_empty() { continue; }
                             let Ok(parsed) = serde_json::from_str::<OllamaChatChunk>(line_str) else { continue };
                             if let Some(msg) = parsed.message {
+                                if !msg.thinking.is_empty() {
+                                    yield ChatEvent::Thinking(msg.thinking);
+                                }
                                 if !msg.content.is_empty() {
                                     yield ChatEvent::Token(msg.content);
                                 }

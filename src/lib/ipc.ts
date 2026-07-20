@@ -28,6 +28,7 @@ export interface ModelInfo {
   license: string;
   ramMinGb: number;
   installed: boolean;
+  installedPath?: string;
   ollamaTag?: string;
   url?: string;
 }
@@ -200,6 +201,12 @@ export function onSessionToolResult(
   cb: (e: { sessionId: string; callId: string; tool: string; output: string; isError: boolean }) => void,
 ): Promise<UnlistenFn> {
   return listen("session:tool_result", (ev) => cb(ev.payload as never));
+}
+
+export function onSessionThinking(
+  cb: (e: { sessionId: string; token: string }) => void,
+): Promise<UnlistenFn> {
+  return listen("session:thinking", (ev) => cb(ev.payload as never));
 }
 
 export function onDownloadProgress(cb: (e: DownloadProgressEvent) => void): Promise<UnlistenFn> {

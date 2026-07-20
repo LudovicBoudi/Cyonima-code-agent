@@ -40,6 +40,7 @@ use crate::tools::ToolRegistry;
 const MAX_TOOL_ITERATIONS: usize = 32;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionInfo {
     pub id: String,
     /// Chemin absolu du workspace ouvert.
@@ -119,6 +120,12 @@ pub struct ToolResultEvent {
     pub tool: String,
     pub output: String,
     pub is_error: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ThinkingEvent {
+    pub session_id: String,
+    pub token: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -411,6 +418,15 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
                     let _ = app.emit(
                         "session:token",
                         TokenEvent {
+                            session_id: session_id.clone(),
+                            token: tok,
+                        },
+                    );
+                }
+                ChatEvent::Thinking(tok) => {
+                    let _ = app.emit(
+                        "session:thinking",
+                        ThinkingEvent {
                             session_id: session_id.clone(),
                             token: tok,
                         },

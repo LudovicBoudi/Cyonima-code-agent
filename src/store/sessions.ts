@@ -24,6 +24,8 @@ interface SessionsState {
   errors: Record<string, string | null>;
   creating: boolean;
   loaded: boolean;
+  /// Contenu thinking en cours de réception par session.
+  thinking: Record<string, string>;
 
   /// Au démarrage : charge les sessions persistées et, pour la dernière
   /// active (la plus récente), restaure aussi ses messages.
@@ -44,6 +46,8 @@ interface SessionsState {
   deleteSession: (sessionId: string) => Promise<void>;
   appendMessage: (sessionId: string, msg: ChatMessage) => void;
   appendToken: (sessionId: string, token: string) => void;
+  appendThinking: (sessionId: string, token: string) => void;
+  clearThinking: (sessionId: string) => void;
   setStreaming: (sessionId: string, streaming: boolean) => void;
   setError: (sessionId: string, error: string | null) => void;
 
@@ -64,6 +68,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   errors: {},
   creating: false,
   loaded: false,
+  thinking: {},
 
   loadAll: async () => {
     try {
@@ -73,14 +78,16 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       const toolCalls: Record<string, ToolCallItem[]> = {};
       const streaming: Record<string, boolean> = {};
       const errors: Record<string, string | null> = {};
+      const thinking: Record<string, string> = {};
       for (const s of list) {
         messages[s.id] = [];
         toolCalls[s.id] = [];
         streaming[s.id] = false;
         errors[s.id] = null;
+        thinking[s.id] = "";
       }
       const activeId = list.length > 0 ? list[0].id : null;
-      set({ sessions: list, activeSessionId: activeId, messages, toolCalls, streaming, errors, loaded: true });
+      set({ sessions: list, activeSessionId: activeId, messages, toolCalls, streaming, errors, thinking, loaded: true });
       // Restaure aussi les messages de la plus récente.
       if (activeId) {
         await get().restoreMessages(activeId);
@@ -113,6 +120,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       toolCalls: { ...st.toolCalls, [info.id]: [] },
       streaming: { ...st.streaming, [info.id]: false },
       errors: { ...st.errors, [info.id]: null },
+      thinking: { ...st.thinking, [info.id]: "" },
     }));
   },
 
@@ -165,6 +173,17 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
           : [...msgs.slice(0, -1), { ...last, content: last.content + token }];
       return { messages: { ...st.messages, [sessionId]: updated } };
     }),
+  appendThinking: (sessionId, token) =>
+    set((st) => ({
+      thinking: {
+        ...st.thinking,
+        [sessionId]: (st.thinking[sessionId] ?? "") + token,
+      },
+    })),
+  clearThinking: (sessionId) =>
+    set((st) => ({
+      thinking: { ...st.thinking, [sessionId]: "" },
+    })),
   setStreaming: (sessionId, streaming) =>
     set((st) => ({ streaming: { ...st.streaming, [sessionId]: streaming } })),
   setError: (sessionId, error) =>
@@ -194,6 +213,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       errors: { ...s.errors, [sessionId]: null },
       streaming: { ...s.streaming, [sessionId]: true },
       toolCalls: { ...s.toolCalls, [sessionId]: [] },
+      thinking: { ...s.thinking, [sessionId]: "" },
       messages: {
         ...s.messages,
         [sessionId]: [
@@ -208,6 +228,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       set((s) => ({
         streaming: { ...s.streaming, [sessionId]: false },
         errors: { ...s.errors, [sessionId]: String(e) },
+        thinking: { ...s.thinking, [sessionId]: "" },
       }));
     }
   },
@@ -218,7 +239,10 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     } catch {
       /* ignore */
     }
-    set((s) => ({ streaming: { ...s.streaming, [sessionId]: false } }));
+    set((s) => ({
+      streaming: { ...s.streaming, [sessionId]: false },
+      thinking: { ...s.thinking, [sessionId]: "" },
+    }));
   },
 
   forkSession: async (sessionId) => {

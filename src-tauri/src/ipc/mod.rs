@@ -217,13 +217,13 @@ pub async fn permission_respond(
 }
 
 #[tauri::command]
-pub fn hardware_get() -> HardwareInfo {
-    hardware::detect()
+pub fn hardware_get() -> Result<HardwareInfo, String> {
+    Ok(hardware::detect())
 }
 
 #[tauri::command]
-pub fn hardware_can_run_model(ram_min_gb: u32) -> bool {
-    hardware::detect().can_run_model(ram_min_gb)
+pub fn hardware_can_run_model(ram_min_gb: u32) -> Result<bool, String> {
+    Ok(hardware::detect().can_run_model(ram_min_gb))
 }
 
 /// Dossier de stockage des GGUF : `~/.cyonima/models/`. Sera configurable en J9.
@@ -268,6 +268,7 @@ pub fn provider_list_configured() -> Result<Vec<String>, String> {
 
 /// Information sur un modèle Ollama installé localement.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OllamaModelInfo {
     pub name: String,
     pub size: u64,
@@ -437,7 +438,7 @@ pub async fn ollama_pull_model(
 #[tauri::command]
 pub async fn config_get(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     let cfg = state.config.get().await;
-    serde_json::to_value(&cfg).map_err(|e| e.to_string())
+    Ok(config_to_json(&cfg))
 }
 
 /// Charge et merge la config d'un workspace spécifique. Renvoie la config
@@ -451,7 +452,19 @@ pub async fn config_get_workspace(
         .await
         .unwrap_or_default();
     let merged = ConfigManager::merge(&global, &ws);
-    serde_json::to_value(&merged).map_err(|e| e.to_string())
+    Ok(config_to_json(&merged))
+}
+
+fn config_to_json(cfg: &crate::config::Config) -> serde_json::Value {
+    serde_json::json!({
+        "storage": { "modelsDir": cfg.storage.models_dir.to_string_lossy() },
+        "permissions": { "overrides": cfg.permissions.overrides },
+        "provider": {
+            "defaultProvider": cfg.provider.default_provider,
+            "defaultModel": cfg.provider.default_model,
+            "ollamaEndpoint": cfg.provider.ollama_endpoint,
+        }
+    })
 }
 
 /// Met à jour le provider par défaut dans la config globale.
@@ -532,6 +545,7 @@ async fn open_index_pool() -> Result<sqlx::sqlite::SqlitePool, sqlx::Error> {
 
 /// Résultat de recherche sémantique (sérialisé pour le frontend).
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SearchResult {
     pub file_path: String,
     pub start_line: usize,

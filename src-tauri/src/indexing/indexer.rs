@@ -19,6 +19,7 @@ pub struct Chunk {
 
 /// Résultat d'indexation.
 #[derive(Debug, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IndexStats {
     pub files_scanned: usize,
     pub chunks_created: usize,

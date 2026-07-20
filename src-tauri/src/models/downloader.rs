@@ -43,6 +43,7 @@ use super::registry::{Registry, RegistryEntry};
 
 /// Événement émis pendant le téléchargement.
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DownloadProgressEvent {
     pub model_id: String,
     /// Bytes téléchargés (parts cumulés).
@@ -54,6 +55,7 @@ pub struct DownloadProgressEvent {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DownloadDoneEvent {
     pub model_id: String,
     pub path: String,
@@ -62,6 +64,7 @@ pub struct DownloadDoneEvent {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DownloadErrorEvent {
     pub model_id: String,
     pub error: String,

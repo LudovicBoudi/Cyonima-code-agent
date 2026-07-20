@@ -85,6 +85,8 @@ impl Default for ChatRequest {
 pub enum ChatEvent {
     /// Un token a été généré.
     Token(String),
+    /// Le modèle est en train de réfléchir (reasoning/thinking).
+    Thinking(String),
     /// Le modèle demande l'exécution d'un outil.
     ToolCall(ToolCall),
     /// Le résultat d'un outil a été consommé par le modèle.

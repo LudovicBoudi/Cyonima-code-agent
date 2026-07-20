@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use sysinfo::System;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HardwareInfo {
     /// RAM totale en octets.
     pub total_ram_bytes: u64,

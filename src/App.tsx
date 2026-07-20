@@ -17,6 +17,7 @@ import {
   onSessionError,
   onSessionToolCall,
   onSessionToolResult,
+  onSessionThinking,
   onDownloadProgress,
   onDownloadDone,
   onDownloadError,
@@ -33,6 +34,8 @@ export default function App() {
   const loadAll = useSessionsStore((s) => s.loadAll);
 
   const appendToken = useSessionsStore((s) => s.appendToken);
+  const appendThinking = useSessionsStore((s) => s.appendThinking);
+  const clearThinking = useSessionsStore((s) => s.clearThinking);
   const setStreaming = useSessionsStore((s) => s.setStreaming);
   const setError = useSessionsStore((s) => s.setError);
   const addToolCall = useSessionsStore((s) => s.addToolCall);
@@ -52,6 +55,7 @@ export default function App() {
     const unlistens: Array<() => void> = [];
     (async () => {
       unlistens.push(await onSessionToken((e) => appendToken(e.sessionId, e.token)));
+      unlistens.push(await onSessionThinking((e) => appendThinking(e.sessionId, e.token)));
       unlistens.push(
         await onSessionToolCall((e) =>
           addToolCall(e.sessionId, { callId: e.callId, tool: e.tool, arguments: e.arguments }),
@@ -62,6 +66,7 @@ export default function App() {
       );
       unlistens.push(
         await onSessionDone((e) => {
+          clearThinking(e.sessionId);
           setStreaming(e.sessionId, false);
         }),
       );
@@ -95,6 +100,8 @@ export default function App() {
     return () => unlistens.forEach((u) => u());
   }, [
     appendToken,
+    appendThinking,
+    clearThinking,
     setStreaming,
     setError,
     addToolCall,

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSessionsStore, type ToolCallItem } from "../store/sessions";
 import { NewSessionForm } from "../components/NewSessionForm";
-import { Wrench, CheckCircle2, XCircle, Loader2, User, Bot } from "lucide-react";
+import { Wrench, CheckCircle2, XCircle, Loader2, User, Bot, Brain } from "lucide-react";
 import Markdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import { DiffViewer } from "../components/DiffViewer";
@@ -69,6 +69,7 @@ export function SessionsView() {
     toolCalls,
     streaming,
     errors,
+    thinking,
     creating,
     loaded,
     restoreMessages,
@@ -86,6 +87,7 @@ export function SessionsView() {
   const calls = active ? toolCalls[active.id] ?? [] : [];
   const isStreaming = active ? streaming[active.id] ?? false : false;
   const error = active ? errors[active.id] ?? null : null;
+  const activeThinking = active ? thinking[active.id] ?? "" : "";
 
   useEffect(() => {
     if (!loaded || !activeId) return;
@@ -132,12 +134,24 @@ export function SessionsView() {
         )}
         {msgs.map((m, i) => {
           const meta = ROLE_META[m.role] ?? ROLE_META.user;
+          const isLastAssistant = m.role === "assistant" && i === msgs.length - 1;
           return (
             <div key={i} className="mb-4 text-sm">
               <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-muted">
                 {meta.icon}
                 {meta.label}
               </div>
+              {isLastAssistant && activeThinking && (
+                <details open className="mb-2">
+                  <summary className="flex cursor-pointer items-center gap-1.5 text-xs text-muted hover:text-fg">
+                    <Brain size={12} className="text-purple-400" />
+                    Raisonnement du modèle
+                  </summary>
+                  <div className="mt-1 rounded border border-purple-500/20 bg-purple-500/5 px-3 py-2 text-xs text-muted whitespace-pre-wrap max-h-60 overflow-y-auto">
+                    {activeThinking}
+                  </div>
+                </details>
+              )}
               {m.role === "assistant" ? (
                 <div className="prose prose-invert prose-sm max-w-none prose-pre:bg-surface prose-pre:border prose-pre:border-border prose-code:text-accent">
                   <Markdown rehypePlugins={[rehypeHighlight]}>
@@ -150,6 +164,18 @@ export function SessionsView() {
             </div>
           );
         })}
+        {isStreaming && activeThinking && msgs.length > 0 && msgs[msgs.length - 1]?.role !== "assistant" && (
+          <div className="mb-4 flex items-center gap-2 text-xs text-muted">
+            <Brain size={14} className="animate-pulse text-purple-400" />
+            <span className="animate-pulse">En train de réfléchir…</span>
+          </div>
+        )}
+        {isStreaming && !activeThinking && (msgs.length === 0 || msgs[msgs.length - 1]?.role !== "assistant") && (
+          <div className="mb-4 flex items-center gap-2 text-xs text-muted">
+            <Loader2 size={14} className="animate-spin text-accent" />
+            <span className="animate-pulse">En train de générer…</span>
+          </div>
+        )}
         {calls.map((c) => (
           <ToolCallBlock key={c.callId} call={c} />
         ))}
