@@ -6,13 +6,17 @@
 //! Implémentations :
 //! - [`ollama`]      : HTTP streaming vers Ollama local externe (J1, fonctionnel)
 //! - [`llama_cpp`]   : bindings built-in via candle GGUF (J1 — stub, à câbler en J1.5)
-//! - `openai`        : API distante OpenAI (J6)
-//! - `anthropic`     : API distante Anthropic (J6)
-//! - `gemini`        : API distante Google Gemini (J6)
-//! - `openai_compat` : endpoint OpenAI-compatible type LM Studio / vLLM / entreprise (J6)
+//! - [`openai`]      : API distante OpenAI (J6)
+//! - [`anthropic`]   : API distante Anthropic (J6)
+//! - [`gemini`]      : API distante Google Gemini (J6)
+//! - [`openai_compat`] : endpoint OpenAI-compatible type LM Studio / vLLM / entreprise (J6)
 
+pub mod anthropic;
+pub mod gemini;
 pub mod llama_cpp;
 pub mod ollama;
+pub mod openai;
+pub mod openai_compat;
 
 use async_trait::async_trait;
 use futures::stream::BoxStream;
@@ -168,36 +172,48 @@ pub struct ProviderParams {
     pub kind: ProviderKind,
     /// Endpoint HTTP pour les providers réseau (Ollama par défaut = http://localhost:11434).
     pub endpoint: Option<String>,
-    /// Clé API (pour J6 — providers distants).
+    /// Clé API (pour J6 — providers distants). Pour Ollama/LM Studio local,
+    /// peut être `None`.
     pub api_key: Option<String>,
 }
 
 /// Factory de providers. Le session manager appelle [`build`] quand il crée
-/// une session ; l'instance produite vit le temps de la session.
+/// une session ; l'instance produite vit le temps de la session. Pour les
+/// providers distants, on récupère automatiquement la clé API via le keyring
+/// OS si elle n'est pas fournie explicitement.
 pub fn build(params: ProviderParams) -> Arc<dyn Provider> {
     match params.kind {
         ProviderKind::Ollama => Arc::new(ollama::OllamaProvider::new(params.endpoint)),
         ProviderKind::LlamaCpp => Arc::new(llama_cpp::LlamaCppProvider::new()),
-        // J6 : implémentations distantes. Pour J1, on retombe sur une erreur
-        // claire émise au premier appel.
-        other => Arc::new(UnimplementedProvider { id: other.as_str() }),
-    }
-}
-
-struct UnimplementedProvider {
-    id: &'static str,
-}
-
-#[async_trait]
-impl Provider for UnimplementedProvider {
-    fn id(&self) -> &str {
-        self.id
-    }
-    fn capabilities(&self) -> Capabilities {
-        Capabilities::default()
-    }
-    async fn stream(&self, _req: ChatRequest) -> BoxStream<'static, ChatEvent> {
-        let msg = format!("Provider '{}' non implémenté (prévu en J6+).", self.id);
-        futures::stream::once(async move { ChatEvent::Error(msg) }).boxed()
+        ProviderKind::OpenAi => {
+            let api_key = params
+                .api_key
+                .or_else(|| crate::secrets::get_key("openai"))
+                .unwrap_or_default();
+            Arc::new(openai::OpenAiProvider::new(params.endpoint, api_key))
+        }
+        ProviderKind::Anthropic => {
+            let api_key = params
+                .api_key
+                .or_else(|| crate::secrets::get_key("anthropic"))
+                .unwrap_or_default();
+            Arc::new(anthropic::AnthropicProvider::new(params.endpoint, api_key))
+        }
+        ProviderKind::Gemini => {
+            let api_key = params
+                .api_key
+                .or_else(|| crate::secrets::get_key("gemini"))
+                .unwrap_or_default();
+            Arc::new(gemini::GeminiProvider::new(params.endpoint, api_key))
+        }
+        ProviderKind::OpenAiCompat => {
+            let api_key = params
+                .api_key
+                .or_else(|| crate::secrets::get_key("openai_compat"));
+            // Endpoint obligatoire pour openai_compat. Sans endpoint on construit
+            // quand même un provider qui retournera une erreur claire au 1er appel.
+            let endpoint = params.endpoint.unwrap_or_else(|| "http://localhost:1234/v1".into());
+            Arc::new(openai_compat::OpenAiCompatProvider::new(endpoint, api_key))
+        }
     }
 }

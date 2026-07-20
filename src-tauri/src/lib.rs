@@ -11,6 +11,7 @@ pub mod ipc;
 pub mod models;
 pub mod permissions;
 pub mod providers;
+pub mod secrets;
 pub mod sessions;
 pub mod tools;
 
