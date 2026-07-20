@@ -33,6 +33,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dashmap = "6"
 async-stream = "0.3"
 tokio-util = { version = "0.7", default-features = false, features = ["rt"] }
+tokio-stream = "0.1"
 reqwest = { version = "0.12", features = ["stream", "json", "rustls-tls"], default-features = false }
 futures = "0.3"
 bytes = "1"
@@ -62,8 +63,14 @@ windows = { version = "0.61", features = [
     "Win32_Graphics_Dxgi_Common",
 ] }
 
+# Backend GGUF local via candle (CPU-only pour l'instant)
+candle-core = { version = "0.11", default-features = false }
+candle-nn = { version = "0.11", default-features = false }
+candle-transformers = { version = "0.11", default-features = false }
+tokenizers = "0.22"
+
 [features]
-# Par défaut on compile avec le backend llama.cpp built-in.
+# Par défaut on compile avec le backend candle GGUF built-in.
 default = ["llama-cpp"]
 llama-cpp = []
 
