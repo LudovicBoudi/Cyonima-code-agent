@@ -77,6 +77,7 @@ export function CatalogView() {
           <thead className="sticky top-0 bg-bg text-muted">
             <tr>
               <th className="px-4 py-2 font-medium">Nom</th>
+              <th className="px-2 py-2 font-medium">Type</th>
               <th className="px-2 py-2 font-medium">Quant.</th>
               <th className="px-2 py-2 font-medium">Taille</th>
               <th className="px-2 py-2 font-medium">RAM min</th>
@@ -188,6 +189,13 @@ function Row({ m, hw, onInstalled }: { m: ModelInfo; hw: HardwareInfo | null; on
           <div className="font-medium text-fg">{m.name}</div>
           <div className="text-muted">{m.id}</div>
         </td>
+        <td className="px-2 py-2">
+          {m.modelType === "coding" ? (
+            <span className="rounded bg-blue-500/10 px-2 py-0.5 text-blue-400 text-xs">Code</span>
+          ) : (
+            <span className="rounded bg-green-500/10 px-2 py-0.5 text-green-400 text-xs">Général</span>
+          )}
+        </td>
         <td className="px-2 py-2 text-muted">{m.quantization}</td>
         <td className="px-2 py-2 text-muted">{formatSize(m.sizeBytes)}</td>
         <td className="px-2 py-2 text-muted">{m.ramMinGb} Go</td>
@@ -204,7 +212,7 @@ function Row({ m, hw, onInstalled }: { m: ModelInfo; hw: HardwareInfo | null; on
       </tr>
       {isDownloading && (
         <tr className="border-t border-border/20 bg-accent/5">
-          <td colSpan={8} className="px-4 py-2">
+          <td colSpan={9} className="px-4 py-2">
             <div className="flex items-center gap-2 text-xs">
               <div className="h-2 flex-1 overflow-hidden rounded bg-border/40">
                 <div
@@ -227,7 +235,7 @@ function Row({ m, hw, onInstalled }: { m: ModelInfo; hw: HardwareInfo | null; on
       )}
       {download?.error && (
         <tr className="border-t border-border/20 bg-red-500/5">
-          <td colSpan={8} className="px-4 py-2 text-xs text-red-300">
+          <td colSpan={9} className="px-4 py-2 text-xs text-red-300">
             {download.error}
           </td>
         </tr>

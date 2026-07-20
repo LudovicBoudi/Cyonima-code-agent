@@ -27,6 +27,7 @@ export interface ModelInfo {
   quantization: string;
   license: string;
   ramMinGb: number;
+  modelType: string;
   installed: boolean;
   installedPath?: string;
   ollamaTag?: string;

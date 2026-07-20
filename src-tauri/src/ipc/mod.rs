@@ -193,6 +193,7 @@ pub async fn model_import_custom(
         quantization: info_quant,
         license: info_license,
         ram_min_gb: info_ram,
+        model_type: "general".to_string(),
         installed: true,
         ollama_tag: info_ollama,
         url: info_url,

@@ -29,6 +29,8 @@ pub struct ModelInfo {
     pub license: String,
     /// RAM minimum recommandée en Go (CPU pur). Garde-fou côté backend.
     pub ram_min_gb: u32,
+    /// Type de modèle : "general" pour généraliste, "coding" pour orienté code.
+    pub model_type: String,
     /// `true` si enregistré dans le registry ET fichier encore présent sur disque.
     pub installed: bool,
     /// Tag Ollama correspondant, si applicable (ex: "gemma4:12b").
@@ -53,8 +55,15 @@ pub struct CatalogEntry {
     pub quantization: String,
     pub license: String,
     pub ram_min_gb: u32,
+    /// Type de modèle : "general" pour généraliste, "coding" pour orienté code.
+    #[serde(default = "default_model_type")]
+    pub model_type: String,
     /// Champ optionnel : tag Ollama pour usage direct sans download Cyonima.
     pub ollama_tag: Option<String>,
+}
+
+fn default_model_type() -> String {
+    "general".to_string()
 }
 
 /// Structure racine du TOML : N entrées `[[models]]`.
@@ -93,6 +102,7 @@ pub async fn list_catalog(registry: &registry::Registry) -> Vec<ModelInfo> {
                 quantization: e.quantization.clone(),
                 license: e.license.clone(),
                 ram_min_gb: e.ram_min_gb,
+                model_type: e.model_type.clone(),
                 installed: inst.is_some(),
                 ollama_tag: e.ollama_tag.clone(),
                 url: Some(e.url.clone()).filter(|u| !u.is_empty()),
@@ -117,6 +127,7 @@ pub async fn list_installed(registry: &registry::Registry) -> Vec<ModelInfo> {
             quantization: e.quantization,
             license: e.license,
             ram_min_gb: e.ram_min_gb,
+            model_type: e.model_type.unwrap_or_else(|| "general".to_string()),
             installed: true,
             ollama_tag: e.ollama_tag,
             url: Some(e.url).filter(|u| !u.is_empty()),
@@ -157,6 +168,7 @@ pub fn validate_custom(path: &str) -> anyhow::Result<registry::RegistryEntry> {
         quantization: "unknown".into(),
         license: "Unspecified".into(),
         ram_min_gb: 0,
+        model_type: Some("general".to_string()),
         ollama_tag: None,
         url: String::new(),
         downloaded_at: chrono::Utc::now(),

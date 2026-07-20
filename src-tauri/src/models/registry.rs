@@ -29,6 +29,9 @@ pub struct RegistryEntry {
     pub quantization: String,
     pub license: String,
     pub ram_min_gb: u32,
+    /// Type de modèle : "general" pour généraliste, "coding" pour orienté code.
+    #[serde(default)]
+    pub model_type: Option<String>,
     /// Tag Ollama optionnel (déclaré par le catalogue TomL).
     pub ollama_tag: Option<String>,
     /// URL source (vide pour imports custom).
@@ -161,6 +164,7 @@ mod tests {
             quantization: "Q4".into(),
             license: "MIT".into(),
             ram_min_gb: 4,
+            model_type: Some("general".to_string()),
             ollama_tag: None,
             url: "".into(),
             downloaded_at: Utc::now(),

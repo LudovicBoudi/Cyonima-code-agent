@@ -384,6 +384,7 @@ async fn run_download(
         quantization: entry.quantization.clone(),
         license: entry.license.clone(),
         ram_min_gb: entry.ram_min_gb,
+        model_type: Some(entry.model_type.clone()),
         ollama_tag: entry.ollama_tag.clone(),
         url: entry.url.clone(),
         downloaded_at: chrono::Utc::now(),
