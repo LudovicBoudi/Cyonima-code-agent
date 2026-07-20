@@ -11,6 +11,7 @@ export default {
         muted: "var(--color-muted)",
         accent: "var(--color-accent)",
         border: "var(--color-border)",
+        surface: "var(--color-surface)",
       },
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],
@@ -18,5 +19,5 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [require("@tailwindcss/typography")],
 } satisfies Config;

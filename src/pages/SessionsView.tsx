@@ -1,7 +1,16 @@
 import { useEffect, useState } from "react";
 import { useSessionsStore, type ToolCallItem } from "../store/sessions";
 import { NewSessionForm } from "../components/NewSessionForm";
-import { Wrench, CheckCircle2, XCircle, Loader2 } from "lucide-react";
+import { Wrench, CheckCircle2, XCircle, Loader2, User, Bot } from "lucide-react";
+import Markdown from "react-markdown";
+import rehypeHighlight from "rehype-highlight";
+import { DiffViewer } from "../components/DiffViewer";
+
+const ROLE_META: Record<string, { label: string; icon: React.ReactNode }> = {
+  user: { label: "Vous", icon: <User size={12} /> },
+  assistant: { label: "Assistant", icon: <Bot size={12} /> },
+  system: { label: "Système", icon: <Wrench size={12} /> },
+};
 
 function ToolCallBlock({ call }: { call: ToolCallItem }) {
   const pending = !call.result && !call.denied;
@@ -39,9 +48,13 @@ function ToolCallBlock({ call }: { call: ToolCallItem }) {
           <div className="mb-1 text-[10px] uppercase tracking-wider text-muted">
             Résultat {call.result.isError ? "(erreur)" : ""}
           </div>
-          <pre className="max-h-60 overflow-y-auto whitespace-pre-wrap font-mono text-xs">
-            {call.result.output}
-          </pre>
+          {call.tool === "edit_file" && !call.result.isError ? (
+            <DiffViewer content={call.result.output} />
+          ) : (
+            <pre className="max-h-60 overflow-y-auto whitespace-pre-wrap font-mono text-xs">
+              {call.result.output}
+            </pre>
+          )}
         </div>
       )}
     </div>
@@ -74,18 +87,14 @@ export function SessionsView() {
   const isStreaming = active ? streaming[active.id] ?? false : false;
   const error = active ? errors[active.id] ?? null : null;
 
-  // Quand l'utilisateur switch d'onglet : si les messages de la nouvelle
-  // active sont vides alors qu'elle n'a pas été juste créée (i.e. elle vient
-  // de la restore initiale), on recharge depuis SQLite.
-useEffect(() => {
-  if (!loaded || !activeId) return;
-  const current = messages[activeId];
-  if (current === undefined) {
-    void restoreMessages(activeId);
-  }
-  // On ne dépend que de `activeId` pour ne refetch qu'au changement d'onglet.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [activeId, loaded]);
+  useEffect(() => {
+    if (!loaded || !activeId) return;
+    const current = messages[activeId];
+    if (current === undefined) {
+      void restoreMessages(activeId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId, loaded]);
 
   if (creating) {
     return (
@@ -121,14 +130,26 @@ useEffect(() => {
         {msgs.length === 0 && calls.length === 0 && (
           <p className="text-sm text-muted">Posez votre première question…</p>
         )}
-        {msgs.map((m, i) => (
-          <div key={i} className="mb-4 text-sm">
-            <div className="mb-1 text-xs font-semibold text-muted">{m.role}</div>
-            <div className="whitespace-pre-wrap">{m.content}</div>
-          </div>
-        ))}
-        {/* Tool calls en cours/derniers — affichés après le dernier message assistant,
-            comme OkTok y insère son "navigation". */}
+        {msgs.map((m, i) => {
+          const meta = ROLE_META[m.role] ?? ROLE_META.user;
+          return (
+            <div key={i} className="mb-4 text-sm">
+              <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-muted">
+                {meta.icon}
+                {meta.label}
+              </div>
+              {m.role === "assistant" ? (
+                <div className="prose prose-invert prose-sm max-w-none prose-pre:bg-surface prose-pre:border prose-pre:border-border prose-code:text-accent">
+                  <Markdown rehypePlugins={[rehypeHighlight]}>
+                    {m.content}
+                  </Markdown>
+                </div>
+              ) : (
+                <div className="whitespace-pre-wrap">{m.content}</div>
+              )}
+            </div>
+          );
+        })}
         {calls.map((c) => (
           <ToolCallBlock key={c.callId} call={c} />
         ))}
@@ -150,9 +171,14 @@ useEffect(() => {
                 submit();
               }
             }}
+            onInput={(e) => {
+              const t = e.currentTarget;
+              t.style.height = "auto";
+              t.style.height = Math.min(t.scrollHeight, 160) + "px";
+            }}
             placeholder="Écrivez un message… (Entrée pour envoyer, Maj+Entrée = saut de ligne)"
             rows={2}
-            className="flex-1 resize-none rounded border border-border bg-bg px-3 py-2 text-sm focus:border-accent focus:outline-none"
+            className="flex-1 resize-none rounded border border-border bg-surface px-3 py-2 text-sm focus:border-accent focus:outline-none max-h-40"
           />
           {isStreaming ? (
             <button

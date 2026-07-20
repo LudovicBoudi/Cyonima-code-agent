@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SessionsView } from "./pages/SessionsView";
 import { CatalogView } from "./pages/CatalogView";
 import { ImportModelView } from "./pages/ImportModelView";
@@ -21,6 +21,7 @@ import {
   onDownloadDone,
   onDownloadError,
 } from "./lib/ipc";
+import { useKeyboardShortcuts, registerShortcut } from "./lib/shortcuts";
 
 type View = "sessions" | "catalog" | "import" | "settings" | "ollama" | "config" | "search";
 
@@ -106,6 +107,36 @@ export default function App() {
   useEffect(() => {
     if (creating || activeSessionId) setView("sessions");
   }, [creating, activeSessionId]);
+
+  // Raccourcis clavier
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const setViewRef = useRef(setView);
+  setViewRef.current = setView;
+  const startCreatingRef = useRef(useSessionsStore.getState().startCreating);
+  startCreatingRef.current = useSessionsStore.getState().startCreating;
+  const cancelRef = useRef(useSessionsStore.getState().cancel);
+  cancelRef.current = useSessionsStore.getState().cancel;
+
+  useEffect(() => {
+    registerShortcut("n", () => {
+      setViewRef.current("sessions");
+      startCreatingRef.current();
+    }, { ctrl: true });
+
+    registerShortcut("f", () => {
+      setViewRef.current("search");
+    }, { ctrl: true });
+
+    registerShortcut("Escape", () => {
+      const state = useSessionsStore.getState();
+      if (state.activeSessionId && state.streaming[state.activeSessionId]) {
+        void state.cancel(state.activeSessionId);
+      }
+    });
+  }, []);
+
+  useKeyboardShortcuts();
 
   return (
     <div className="flex h-screen flex-col">

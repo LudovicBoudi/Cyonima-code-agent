@@ -1,5 +1,6 @@
 import { useSessionsStore } from "../store/sessions";
 import { Plus, Terminal, BookOpen, X, GitFork, Upload, Key, Server, Settings, Search } from "lucide-react";
+import { ThemeToggle } from "./ThemeToggle";
 
 const PROVIDER_LABEL: Record<string, string> = {
   llama_cpp: "llama.cpp",
@@ -30,62 +31,28 @@ export function Sidebar({
       </div>
 
       <nav className="px-2 py-2">
-        <button
-          onClick={() => onView("sessions")}
-          className={`mb-1 w-full rounded px-2 py-2 text-left text-xs ${
-            view === "sessions" ? "bg-accent/20 text-fg" : "text-muted hover:bg-border/40"
-          }`}
-        >
-          Sessions ({sessions.length})
-        </button>
-        <button
-          onClick={() => onView("catalog")}
-          className={`mb-1 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs ${
-            view === "catalog" ? "bg-accent/20 text-fg" : "text-muted hover:bg-border/40"
-          }`}
-        >
-          <BookOpen size={14} /> Catalogue de modèles
-        </button>
-        <button
-          onClick={() => onView("ollama")}
-          className={`mb-1 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs ${
-            view === "ollama" ? "bg-accent/20 text-fg" : "text-muted hover:bg-border/40"
-          }`}
-        >
-          <Server size={14} /> Ollama
-        </button>
-        <button
-          onClick={() => onView("import")}
-          className={`mb-1 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs ${
-            view === "import" ? "bg-accent/20 text-fg" : "text-muted hover:bg-border/40"
-          }`}
-        >
-          <Upload size={14} /> Importer un modèle
-        </button>
-        <button
-          onClick={() => onView("settings")}
-          className={`mb-1 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs ${
-            view === "settings" ? "bg-accent/20 text-fg" : "text-muted hover:bg-border/40"
-          }`}
-        >
-          <Key size={14} /> Clés API
-        </button>
-        <button
-          onClick={() => onView("config")}
-          className={`mb-1 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs ${
-            view === "config" ? "bg-accent/20 text-fg" : "text-muted hover:bg-border/40"
-          }`}
-        >
-          <Settings size={14} /> Configuration
-        </button>
-        <button
-          onClick={() => onView("search")}
-          className={`mb-1 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs ${
-            view === "search" ? "bg-accent/20 text-fg" : "text-muted hover:bg-border/40"
-          }`}
-        >
-          <Search size={14} /> Recherche
-        </button>
+        {([
+          { id: "sessions" as const, icon: null, label: `Sessions (${sessions.length})` },
+          { id: "catalog" as const, icon: <BookOpen size={14} />, label: "Catalogue de modèles" },
+          { id: "ollama" as const, icon: <Server size={14} />, label: "Ollama" },
+          { id: "import" as const, icon: <Upload size={14} />, label: "Importer un modèle" },
+          { id: "settings" as const, icon: <Key size={14} />, label: "Clés API" },
+          { id: "config" as const, icon: <Settings size={14} />, label: "Configuration" },
+          { id: "search" as const, icon: <Search size={14} />, label: "Recherche" },
+        ]).map((item) => (
+          <button
+            key={item.id}
+            onClick={() => onView(item.id)}
+            className={`mb-1 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs ${
+              view === item.id
+                ? "bg-accent/20 text-fg"
+                : "text-muted hover:bg-border/40"
+            }`}
+          >
+            {item.icon}
+            {item.label}
+          </button>
+        ))}
       </nav>
 
       {view === "sessions" && (
@@ -152,6 +119,9 @@ export function Sidebar({
           </button>
         </>
       )}
+      <div className="mt-auto border-t border-border px-3 py-2">
+        <ThemeToggle />
+      </div>
     </aside>
   );
 }
