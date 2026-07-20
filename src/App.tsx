@@ -4,6 +4,7 @@ import { CatalogView } from "./pages/CatalogView";
 import { ImportModelView } from "./pages/ImportModelView";
 import { SettingsView } from "./pages/SettingsView";
 import { OllamaView } from "./pages/OllamaView";
+import { ConfigView } from "./pages/ConfigView";
 import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { PermissionDialog } from "./components/PermissionDialog";
@@ -20,7 +21,7 @@ import {
   onDownloadError,
 } from "./lib/ipc";
 
-type View = "sessions" | "catalog" | "import" | "settings" | "ollama";
+type View = "sessions" | "catalog" | "import" | "settings" | "ollama" | "config";
 
 export default function App() {
   const [view, setView] = useState<View>("sessions");
@@ -115,6 +116,7 @@ export default function App() {
           {view === "ollama" && <OllamaView />}
           {view === "import" && <ImportModelView />}
           {view === "settings" && <SettingsView />}
+          {view === "config" && <ConfigView />}
         </main>
       </div>
       <StatusBar />

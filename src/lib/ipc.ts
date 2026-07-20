@@ -81,6 +81,16 @@ export interface OllamaPullProgress {
   digest?: string;
 }
 
+export interface GlobalConfig {
+  storage: { modelsDir: string };
+  permissions: { overrides: Record<string, string> };
+  provider: {
+    defaultProvider: string | null;
+    defaultModel: string | null;
+    ollamaEndpoint: string | null;
+  };
+}
+
 // ===== Commands =====
 
 export const ipc = {
@@ -121,6 +131,20 @@ export const ipc = {
     invoke<OllamaModelInfo[]>("ollama_list_models"),
   ollamaPullModel: (p: { model: string }) =>
     invoke<void>("ollama_pull_model", p),
+
+  configGet: () => invoke<GlobalConfig>("config_get"),
+  configGetWorkspace: (p: { workspace: string }) =>
+    invoke<GlobalConfig>("config_get_workspace", p),
+  configSetDefaultProvider: (p: { provider: string | null }) =>
+    invoke<void>("config_set_default_provider", p),
+  configSetDefaultModel: (p: { model: string | null }) =>
+    invoke<void>("config_set_default_model", p),
+  configSetOllamaEndpoint: (p: { endpoint: string | null }) =>
+    invoke<void>("config_set_ollama_endpoint", p),
+  configSetPermission: (p: { tool: string; policy: string }) =>
+    invoke<void>("config_set_permission", p),
+  configRemovePermission: (p: { tool: string }) =>
+    invoke<void>("config_remove_permission", p),
 
   hardwareGet: () => invoke<HardwareInfo>("hardware_get"),
   hardwareCanRunModel: (ramMinGb: number) =>

@@ -12,6 +12,7 @@ use futures::StreamExt;
 use tauri::State;
 use tauri::Emitter;
 
+use crate::config::ConfigManager;
 use crate::hardware::{self, HardwareInfo};
 use crate::models::{self, downloader::DownloadManager, registry::Registry, ModelInfo};
 use crate::permissions::{Decision, Gateway};
@@ -24,6 +25,7 @@ pub struct AppState {
     pub gateway: Arc<Gateway>,
     pub registry: Arc<Registry>,
     pub downloads: Arc<DownloadManager>,
+    pub config: Arc<ConfigManager>,
 }
 
 impl AppState {
@@ -33,13 +35,14 @@ impl AppState {
         let registry = Registry::open_default().await?;
         let persistence = crate::sessions::persistence::open_default().await?;
         let sessions = SessionManager::with_persistence(persistence);
-        // Recharge les sessions historiques en cache in-memory.
         sessions.restore_all().await?;
+        let config = ConfigManager::open().await;
         Ok(Self {
             sessions: Arc::new(sessions),
             gateway: Arc::new(Gateway::new()),
             registry: Arc::new(registry),
             downloads: Arc::new(DownloadManager::new()),
+            config: Arc::new(config),
         })
     }
 }
@@ -426,4 +429,81 @@ pub async fn ollama_pull_model(
     });
 
     Ok(())
+}
+
+// ===== Config par projet =====
+
+/// Retourne la config globale courante (sérialisée en JSON pour le frontend).
+#[tauri::command]
+pub async fn config_get(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let cfg = state.config.get().await;
+    serde_json::to_value(&cfg).map_err(|e| e.to_string())
+}
+
+/// Charge et merge la config d'un workspace spécifique. Renvoie la config
+/// resultante (globale + override workspace).
+#[tauri::command]
+pub async fn config_get_workspace(
+    workspace: String,
+) -> Result<serde_json::Value, String> {
+    let global = ConfigManager::open().await.get().await;
+    let ws = ConfigManager::load_workspace_config(&workspace)
+        .await
+        .unwrap_or_default();
+    let merged = ConfigManager::merge(&global, &ws);
+    serde_json::to_value(&merged).map_err(|e| e.to_string())
+}
+
+/// Met à jour le provider par défaut dans la config globale.
+#[tauri::command]
+pub async fn config_set_default_provider(
+    state: State<'_, AppState>,
+    provider: Option<String>,
+) -> Result<(), String> {
+    state.config.set_default_provider(provider).await.map_err(|e| e.to_string())
+}
+
+/// Met à jour le modèle par défaut dans la config globale.
+#[tauri::command]
+pub async fn config_set_default_model(
+    state: State<'_, AppState>,
+    model: Option<String>,
+) -> Result<(), String> {
+    state.config.set_default_model(model).await.map_err(|e| e.to_string())
+}
+
+/// Met à jour l'endpoint Ollama dans la config globale.
+#[tauri::command]
+pub async fn config_set_ollama_endpoint(
+    state: State<'_, AppState>,
+    endpoint: Option<String>,
+) -> Result<(), String> {
+    state.config.set_ollama_endpoint(endpoint).await.map_err(|e| e.to_string())
+}
+
+/// Met à jour un override de permission pour un outil.
+#[tauri::command]
+pub async fn config_set_permission(
+    state: State<'_, AppState>,
+    tool: String,
+    policy: String,
+) -> Result<(), String> {
+    state
+        .config
+        .set_permission_override(tool, policy)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Supprime un override de permission.
+#[tauri::command]
+pub async fn config_remove_permission(
+    state: State<'_, AppState>,
+    tool: String,
+) -> Result<(), String> {
+    state
+        .config
+        .remove_permission_override(&tool)
+        .await
+        .map_err(|e| e.to_string())
 }

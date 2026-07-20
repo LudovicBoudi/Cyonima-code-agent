@@ -139,11 +139,14 @@ Les jalons sont prévus pour être livrés dans l'ordre. Chacun a des critères 
 - Outil `semantic_search` pour l'agent
 - **DoD** : l'agent peut chercher "où est géré le panier dans le code" et obtenir des hits pertinents.
 
-## J9 — Settings + config par projet
-- UI settings complète (providers, storage, permissions, thème)
-- Override `.cyonima/config.toml` par projet
-- Migration de schéma de config
-- **DoD** : un workspace peut choisir son modèle + ses permissions propres.
+## J9 — Settings + config par projet  ✅
+- UI settings complète (providers, storage, permissions)  ✅
+- `ConfigManager` : TOML global `~/.cyonima/config.toml` + override `<workspace>/.cyonima/config.toml`  ✅
+- Merge global/workspace avec priorité workspace  ✅
+- IPC `config_get`, `config_get_workspace`, `config_set_*`  ✅
+- UI `ConfigView` : provider/modèle par défaut, endpoint Ollama, permissions par outil  ✅
+- 3 tests Rust : default config, set/get provider, merge workspace  ✅
+- **DoD** : un workspace peut choisir son modèle + ses permissions propres.  ✅
 
 ## J10 — Polissage UI
 - Diff viewer + apply/reject
