@@ -91,6 +91,21 @@ export interface GlobalConfig {
   };
 }
 
+export interface IndexStats {
+  filesScanned: number;
+  chunksCreated: number;
+  chunksEmbedded: number;
+  errors: string[];
+}
+
+export interface SearchResult {
+  filePath: string;
+  startLine: number;
+  endLine: number;
+  text: string;
+  score: number;
+}
+
 // ===== Commands =====
 
 export const ipc = {
@@ -149,6 +164,12 @@ export const ipc = {
   hardwareGet: () => invoke<HardwareInfo>("hardware_get"),
   hardwareCanRunModel: (ramMinGb: number) =>
     invoke<boolean>("hardware_can_run_model", { ramMinGb }),
+
+  indexBuild: (p: { workspace: string }) =>
+    invoke<IndexStats>("index_build", p),
+  indexSearch: (p: { workspace: string; query: string; limit?: number }) =>
+    invoke<SearchResult[]>("index_search", p),
+  indexCount: () => invoke<number>("index_count"),
 };
 
 // ===== Events helpers =====

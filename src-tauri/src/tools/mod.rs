@@ -22,6 +22,7 @@ pub mod edit_file;
 pub mod glob;
 pub mod grep;
 pub mod read_file;
+pub mod semantic_search;
 pub mod write_file;
 
 use std::collections::HashMap;
@@ -100,6 +101,7 @@ impl ToolRegistry {
             Arc::new(glob::Glob),
             Arc::new(grep::Grep),
             Arc::new(bash::Bash::new()),
+            Arc::new(semantic_search::SemanticSearch),
         ];
         for t in entries {
             tools.insert(t.name().to_string(), t);

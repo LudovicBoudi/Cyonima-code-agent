@@ -75,6 +75,9 @@ pub fn run() {
             ipc::config_set_ollama_endpoint,
             ipc::config_set_permission,
             ipc::config_remove_permission,
+            ipc::index_build,
+            ipc::index_search,
+            ipc::index_count,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de l'application Tauri");

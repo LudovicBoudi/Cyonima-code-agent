@@ -1,5 +1,5 @@
 import { useSessionsStore } from "../store/sessions";
-import { Plus, Terminal, BookOpen, X, GitFork, Upload, Key, Server, Settings } from "lucide-react";
+import { Plus, Terminal, BookOpen, X, GitFork, Upload, Key, Server, Settings, Search } from "lucide-react";
 
 const PROVIDER_LABEL: Record<string, string> = {
   llama_cpp: "llama.cpp",
@@ -10,7 +10,7 @@ const PROVIDER_LABEL: Record<string, string> = {
   openai_compat: "OpenAI-compat",
 };
 
-type View = "sessions" | "catalog" | "import" | "settings" | "ollama" | "config";
+type View = "sessions" | "catalog" | "import" | "settings" | "ollama" | "config" | "search";
 
 export function Sidebar({
   view,
@@ -77,6 +77,14 @@ export function Sidebar({
           }`}
         >
           <Settings size={14} /> Configuration
+        </button>
+        <button
+          onClick={() => onView("search")}
+          className={`mb-1 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs ${
+            view === "search" ? "bg-accent/20 text-fg" : "text-muted hover:bg-border/40"
+          }`}
+        >
+          <Search size={14} /> Recherche
         </button>
       </nav>
 

@@ -507,3 +507,84 @@ pub async fn config_remove_permission(
         .await
         .map_err(|e| e.to_string())
 }
+
+// ===== Indexation sémantique (J8) =====
+
+/// Pool SQLite pour l'index sémantique (partagé entre commandes).
+pub struct IndexPool(pub sqlx::sqlite::SqlitePool);
+
+/// Initialise la DB d'indexation au démarrage.
+async fn open_index_pool() -> Result<sqlx::sqlite::SqlitePool, sqlx::Error> {
+    let db_path = dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("cyonima")
+        .join("index")
+        .join("search.db");
+    std::fs::create_dir_all(db_path.parent().unwrap()).ok();
+    let url = format!("sqlite:{}?mode=rwc", db_path.display());
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect(&url)
+        .await?;
+    crate::indexing::indexer::init_db(&pool).await?;
+    Ok(pool)
+}
+
+/// Résultat de recherche sémantique (sérialisé pour le frontend).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SearchResult {
+    pub file_path: String,
+    pub start_line: usize,
+    pub end_line: usize,
+    pub text: String,
+    pub score: f32,
+}
+
+/// Lance l'indexation d'un workspace.
+#[tauri::command]
+pub async fn index_build(
+    workspace: String,
+) -> Result<crate::indexing::indexer::IndexStats, String> {
+    let pool = open_index_pool().await.map_err(|e| e.to_string())?;
+    crate::indexing::indexer::clear_index(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    crate::indexing::indexer::index_workspace(&pool, std::path::Path::new(&workspace))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Recherche sémantique dans l'index.
+#[tauri::command]
+pub async fn index_search(
+    _workspace: String,
+    query: String,
+    limit: Option<usize>,
+) -> Result<Vec<SearchResult>, String> {
+    let pool = open_index_pool().await.map_err(|e| e.to_string())?;
+    let mut embedder =
+        crate::indexing::embedder::Embedder::load().map_err(|e| e.to_string())?;
+    let limit = limit.unwrap_or(10);
+    let results = crate::indexing::search::search(&pool, &mut embedder, &query, limit)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(results
+        .into_iter()
+        .map(|r| SearchResult {
+            file_path: r.file_path,
+            start_line: r.start_line,
+            end_line: r.end_line,
+            text: r.text,
+            score: r.score,
+        })
+        .collect())
+}
+
+/// Nombre de chunks dans l'index.
+#[tauri::command]
+pub async fn index_count() -> Result<usize, String> {
+    let pool = open_index_pool().await.map_err(|e| e.to_string())?;
+    crate::indexing::search::count_chunks(&pool)
+        .await
+        .map_err(|e| e.to_string())
+}
