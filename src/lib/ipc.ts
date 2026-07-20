@@ -113,7 +113,7 @@ export interface SearchResult {
 export const ipc = {
   sessionCreate: (p: { workspace: string; modelId: string; providerId: string }) =>
     invoke<SessionInfo>("session_create", p),
-  sessionSend: (p: { sessionId: string; message: string }) =>
+  sessionSend: (p: { sessionId: string; message: string; model?: string }) =>
     invoke<void>("session_send", p),
   sessionCancel: (p: { sessionId: string }) => invoke<void>("session_cancel", p),
   sessionFork: (p: { sessionId: string }) => invoke<SessionInfo | null>("session_fork", p),
@@ -127,6 +127,7 @@ export const ipc = {
   modelDownload: (p: { modelId: string }) => invoke<void>("model_download", p),
   modelDownloadCancel: (p: { modelId: string }) =>
     invoke<void>("model_download_cancel", p),
+  modelClearCache: () => invoke<void>("model_clear_cache"),
   modelImportCustom: (p: { path: string }) =>
     invoke<ModelInfo>("model_import_custom", p),
 
@@ -208,6 +209,12 @@ export function onSessionThinking(
   cb: (e: { sessionId: string; token: string }) => void,
 ): Promise<UnlistenFn> {
   return listen("session:thinking", (ev) => cb(ev.payload as never));
+}
+
+export function onSessionModelLoading(
+  cb: (e: { sessionId: string; loading: boolean; progress: number }) => void,
+): Promise<UnlistenFn> {
+  return listen("session:model_loading", (ev) => cb(ev.payload as never));
 }
 
 export function onDownloadProgress(cb: (e: DownloadProgressEvent) => void): Promise<UnlistenFn> {

@@ -1,5 +1,5 @@
 import { useSessionsStore } from "../store/sessions";
-import { Plus, Terminal, BookOpen, X, GitFork, Upload, Key, Server, Settings, Search } from "lucide-react";
+import { Plus, Terminal, BookOpen, X, GitFork, Upload, Key, Server, Settings, Search, MessageSquare } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
 
 const PROVIDER_LABEL: Record<string, string> = {
@@ -32,7 +32,7 @@ export function Sidebar({
 
       <nav className="px-2 py-2">
         {([
-          { id: "sessions" as const, icon: null, label: `Sessions (${sessions.length})` },
+          { id: "sessions" as const, icon: <MessageSquare size={14} />, label: `Sessions (${sessions.length})` },
           { id: "catalog" as const, icon: <BookOpen size={14} />, label: "Catalogue de modèles" },
           { id: "ollama" as const, icon: <Server size={14} />, label: "Ollama" },
           { id: "import" as const, icon: <Upload size={14} />, label: "Importer un modèle" },

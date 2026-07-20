@@ -9,12 +9,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use futures::StreamExt;
-use tauri::State;
 use tauri::Emitter;
+use tauri::State;
 
 use crate::config::ConfigManager;
 use crate::hardware::{self, HardwareInfo};
-use crate::models::{self, downloader::DownloadManager, registry::Registry, ModelInfo};
+use crate::models::{self, registry::Registry, ModelInfo};
 use crate::permissions::{Decision, Gateway};
 use crate::providers::ProviderKind;
 use crate::sessions::{SessionInfo, SessionManager};
@@ -24,7 +24,7 @@ pub struct AppState {
     pub sessions: Arc<SessionManager>,
     pub gateway: Arc<Gateway>,
     pub registry: Arc<Registry>,
-    pub downloads: Arc<DownloadManager>,
+    // pub downloads: Arc<DownloadManager>, // OBSOLÈTE - utiliser Ollama
     pub config: Arc<ConfigManager>,
 }
 
@@ -41,7 +41,7 @@ impl AppState {
             sessions: Arc::new(sessions),
             gateway: Arc::new(Gateway::new()),
             registry: Arc::new(registry),
-            downloads: Arc::new(DownloadManager::new()),
+            // downloads: Arc::new(DownloadManager::new()), // OBSOLÈTE
             config: Arc::new(config),
         })
     }
@@ -72,10 +72,11 @@ pub async fn session_send(
     state: State<'_, AppState>,
     session_id: String,
     message: String,
+    model: Option<String>,
 ) -> Result<(), String> {
     state
         .sessions
-        .send(app, Arc::clone(&state.gateway), session_id, message)
+        .send(app, Arc::clone(&state.gateway), session_id, message, model)
         .await
 }
 
@@ -130,40 +131,43 @@ pub async fn model_catalog_list(state: State<'_, AppState>) -> Result<Vec<ModelI
     Ok(models::list_catalog(&state.registry).await)
 }
 
-/// Lance le téléchargement d'un modèle du catalogue. Spawn un tokio::task qui
-/// stream les bytes et émet les events `model:download:progress`, `done`,
-/// `error`. Retourne immédiatement après le garde-fou hardware.
+/// Lance le téléchargement d'un modèle du catalogue. 
+/// OBSOLÈTE : utiliser Ollama pull à la place.
 #[tauri::command]
 pub async fn model_download(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-    model_id: String,
+    _app: tauri::AppHandle,
+    _state: State<'_, AppState>,
+    _model_id: String,
 ) -> Result<(), String> {
-    // 1) Trouve l'entrée du catalogue.
-    let entry = models::find_catalog_entry(&model_id)
-        .ok_or_else(|| format!("Modèle '{model_id}' introuvable dans le catalogue"))?;
-
-    // 2) Garde-fou hardware : refuse avant d'allouer le download.
-    let hw = hardware::detect();
-    if entry.ram_min_gb > 0 && !hw.can_run_model(entry.ram_min_gb) {
-        return Err(format!(
-            "RAM insuffisante pour '{}': requis {} Go, disponible {} Go (marge 1 Go pour l'OS). Téléchargement bloqué.",
-            model_id, entry.ram_min_gb, hw.total_ram_gb
-        ));
-    }
-
-    // 3) Détermine le dossier de destination : `~/.cyonima/models/`.
-    let dest_dir = default_models_dir();
-
-    // 4) Lance le download.
-    state
-        .downloads
-        .start(app, Arc::clone(&state.registry), entry, dest_dir)
+    Err("Téléchargement GGUF obsolète. Utilisez 'Pull Ollama' dans le catalogue.".to_string())
 }
 
 #[tauri::command]
-pub fn model_download_cancel(state: State<'_, AppState>, model_id: String) -> Result<(), String> {
-    state.downloads.cancel(&model_id)
+pub fn model_download_cancel(_state: State<'_, AppState>, _model_id: String) -> Result<(), String> {
+    Err("Téléchargement GGUF obsolète.".to_string())
+}
+
+/// Vide le cache des modèles téléchargés (registry + fichiers GGUF).
+/// Utile pour nettoyer après migration vers Ollama.
+#[tauri::command]
+pub async fn model_clear_cache(state: State<'_, AppState>) -> Result<(), String> {
+    // 1) Vider le registry
+    state.registry.clear().await.map_err(|e| format!("Erreur lors du nettoyage du registry: {e}"))?;
+    
+    // 2) Supprimer les fichiers GGUF du dossier models
+    let models_dir = default_models_dir();
+    if models_dir.exists() {
+        match std::fs::remove_dir_all(&models_dir) {
+            Ok(_) => {
+                // Recréer le dossier vide
+                std::fs::create_dir_all(&models_dir)
+                    .map_err(|e| format!("Erreur recréation dossier models: {e}"))?;
+            }
+            Err(e) => return Err(format!("Erreur suppression dossier models: {e}"))
+        }
+    }
+    
+    Ok(())
 }
 
 #[tauri::command]
@@ -267,6 +271,9 @@ pub fn provider_list_configured() -> Result<Vec<String>, String> {
 
 // ===== Ollama — list & pull =====
 
+/// Endpoint Ollama par défaut (instance locale).
+const DEFAULT_OLLAMA_ENDPOINT: &str = "http://localhost:11434";
+
 /// Information sur un modèle Ollama installé localement.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -277,55 +284,70 @@ pub struct OllamaModelInfo {
     pub modified_at: String,
 }
 
+/// Appel bas-niveau : récupère la liste des modèles Ollama installés
+/// via `GET /api/tags`. Utilisé par la commande IPC et par `list_catalog`.
+pub async fn fetch_ollama_models(endpoint: &str) -> Result<Vec<OllamaModelInfo>, String> {
+    let url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Ollama injoignable sur {endpoint}: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("Ollama a répondu {}", resp.status()));
+    }
+
+    // Structure interne : Ollama renvoie les champs en snake_case.
+    #[derive(serde::Deserialize)]
+    struct OllamaTag {
+        name: String,
+        #[serde(default)]
+        size: u64,
+        #[serde(default)]
+        digest: String,
+        #[serde(default)]
+        modified_at: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct TagsResponse {
+        #[serde(default)]
+        models: Vec<OllamaTag>,
+    }
+
+    let parsed: TagsResponse = resp
+        .json()
+        .await
+        .map_err(|e| format!("réponse Ollama invalide: {e}"))?;
+    Ok(parsed
+        .models
+        .into_iter()
+        .map(|t| OllamaModelInfo {
+            name: t.name,
+            size: t.size,
+            digest: t.digest,
+            modified_at: t.modified_at,
+        })
+        .collect())
+}
+
 /// Liste les modèles installés localement côté Ollama (`GET /api/tags`).
 /// Renvoie une erreur si Ollama n'est pas joignable.
 #[tauri::command]
 pub async fn ollama_list_models(
+    state: State<'_, AppState>,
 ) -> Result<Vec<OllamaModelInfo>, String> {
-    // On utilise le provider Ollama pour récupérer l'endpoint.
-    let endpoint = crate::providers::ollama::DEFAULT_ENDPOINT;
-    let url = format!("{}/api/tags", endpoint);
-
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let resp = client.get(&url).send().await.map_err(|e| {
-        format!(
-            "Ollama injoignable sur {endpoint} — vérifiez qu'Ollama tourne (`ollama serve`). Détail: {e}"
-        )
-    })?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!("Ollama a répondu {status}: {text}"));
-    }
-
-    #[derive(serde::Deserialize)]
-    struct OllamaTagsResponse {
-        models: Vec<OllamaModelEntry>,
-    }
-    #[derive(serde::Deserialize)]
-    struct OllamaModelEntry {
-        name: String,
-        size: u64,
-        digest: String,
-        modified_at: String,
-    }
-
-    let body: OllamaTagsResponse = resp.json().await.map_err(|e| e.to_string())?;
-    Ok(body
-        .models
-        .into_iter()
-        .map(|m| OllamaModelInfo {
-            name: m.name,
-            size: m.size,
-            digest: m.digest,
-            modified_at: m.modified_at,
-        })
-        .collect())
+    let endpoint = state
+        .config
+        .get()
+        .await
+        .provider
+        .ollama_endpoint
+        .unwrap_or_else(|| DEFAULT_OLLAMA_ENDPOINT.to_string());
+    fetch_ollama_models(&endpoint).await
 }
 
 /// Lance le pull d'un modèle Ollama (`POST /api/pull`). Le pull est
@@ -334,11 +356,21 @@ pub async fn ollama_list_models(
 #[tauri::command]
 pub async fn ollama_pull_model(
     app: tauri::AppHandle,
+    state: State<'_, AppState>,
     model: String,
 ) -> Result<(), String> {
-    let endpoint = crate::providers::ollama::DEFAULT_ENDPOINT.to_string();
+    let endpoint = state
+        .config
+        .get()
+        .await
+        .provider
+        .ollama_endpoint
+        .unwrap_or_else(|| DEFAULT_OLLAMA_ENDPOINT.to_string());
+    let endpoint = endpoint.trim_end_matches('/').to_string();
     let model_clone = model.clone();
 
+    // Le pull peut être long : on le lance dans une task et on émet des
+    // events de progression. La commande retourne immédiatement.
     tokio::spawn(async move {
         let url = format!("{}/api/pull", endpoint);
         let body = serde_json::json!({ "model": model_clone, "stream": true });
@@ -349,10 +381,10 @@ pub async fn ollama_pull_model(
         {
             Ok(c) => c,
             Err(e) => {
-                let _ = app.emit("ollama:pull:error", serde_json::json!({
-                    "model": model_clone,
-                    "error": e.to_string(),
-                }));
+                let _ = app.emit(
+                    "ollama:pull:error",
+                    serde_json::json!({ "model": model_clone, "error": e.to_string() }),
+                );
                 return;
             }
         };
@@ -360,10 +392,13 @@ pub async fn ollama_pull_model(
         let resp = match client.post(&url).json(&body).send().await {
             Ok(r) => r,
             Err(e) => {
-                let _ = app.emit("ollama:pull:error", serde_json::json!({
-                    "model": model_clone,
-                    "error": format!("Ollama injoignable: {e}"),
-                }));
+                let _ = app.emit(
+                    "ollama:pull:error",
+                    serde_json::json!({
+                        "model": model_clone,
+                        "error": format!("Ollama injoignable: {e}"),
+                    }),
+                );
                 return;
             }
         };
@@ -371,10 +406,13 @@ pub async fn ollama_pull_model(
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
-            let _ = app.emit("ollama:pull:error", serde_json::json!({
-                "model": model_clone,
-                "error": format!("Ollama a répondu {status}: {text}"),
-            }));
+            let _ = app.emit(
+                "ollama:pull:error",
+                serde_json::json!({
+                    "model": model_clone,
+                    "error": format!("Ollama a répondu {status}: {text}"),
+                }),
+            );
             return;
         }
 
@@ -392,42 +430,63 @@ pub async fn ollama_pull_model(
                             Ok(s) => s.trim(),
                             Err(_) => continue,
                         };
-                        if line_str.is_empty() { continue; }
-                        let Ok(parsed) = serde_json::from_str::<serde_json::Value>(line_str) else { continue };
+                        if line_str.is_empty() {
+                            continue;
+                        }
+                        let Ok(parsed) =
+                            serde_json::from_str::<serde_json::Value>(line_str)
+                        else {
+                            continue;
+                        };
 
-                        // Throttle: émet un event toutes les 200ms max.
-                        let now = std::time::Instant::now();
-                        let should_emit = now.duration_since(last_emit) >= std::time::Duration::from_millis(200)
-                            || parsed.get("completed").and_then(|v| v.as_bool()) == Some(true);
+                        let status = parsed
+                            .get("status")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
 
-                        if should_emit {
-                            last_emit = now;
-                            let _ = app.emit("ollama:pull:progress", &parsed);
+                        // Fin du pull : Ollama renvoie {"status":"success"}.
+                        if status == "success" {
+                            let _ = app.emit(
+                                "ollama:pull:done",
+                                serde_json::json!({ "model": model_clone }),
+                            );
+                            return;
                         }
 
-                        // Si completed = true, le pull est fini.
-                        if parsed.get("completed").and_then(|v| v.as_bool()) == Some(true) {
-                            let _ = app.emit("ollama:pull:done", serde_json::json!({
-                                "model": model_clone,
-                            }));
+                        // Une erreur peut apparaître dans le flux.
+                        if let Some(err) = parsed.get("error").and_then(|v| v.as_str()) {
+                            let _ = app.emit(
+                                "ollama:pull:error",
+                                serde_json::json!({
+                                    "model": model_clone,
+                                    "error": err,
+                                }),
+                            );
                             return;
+                        }
+
+                        // Throttle : un event de progression toutes les 200ms max.
+                        let now = std::time::Instant::now();
+                        if now.duration_since(last_emit)
+                            >= std::time::Duration::from_millis(200)
+                        {
+                            last_emit = now;
+                            let _ = app.emit("ollama:pull:progress", &parsed);
                         }
                     }
                 }
                 Err(e) => {
-                    let _ = app.emit("ollama:pull:error", serde_json::json!({
-                        "model": model_clone,
-                        "error": format!("Flux interrompu: {e}"),
-                    }));
+                    let _ = app.emit(
+                        "ollama:pull:error",
+                        serde_json::json!({
+                            "model": model_clone,
+                            "error": format!("Flux interrompu: {e}"),
+                        }),
+                    );
                     return;
                 }
             }
         }
-
-        // Stream terminé sans "completed: true" — considéré comme terminé.
-        let _ = app.emit("ollama:pull:done", serde_json::json!({
-            "model": model_clone,
-        }));
     });
 
     Ok(())

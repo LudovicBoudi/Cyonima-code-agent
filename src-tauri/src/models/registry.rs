@@ -117,6 +117,15 @@ impl Registry {
         self.flush().await
     }
 
+    /// Vide complètement le registry (pour nettoyage cache).
+    pub async fn clear(&self) -> anyhow::Result<()> {
+        {
+            let mut guard = self.inner.write().await;
+            guard.entries.clear();
+        }
+        self.flush().await
+    }
+
     /// Renvoie le chemin du GGUF d'un modèle installé, s'il existe encore sur disque.
     pub async fn path_of(&self, model_id: &str) -> Option<PathBuf> {
         let guard = self.inner.read().await;

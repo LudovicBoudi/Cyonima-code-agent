@@ -28,6 +28,11 @@ struct OllamaChatRequest {
     model: String,
     messages: Vec<OllamaMessage>,
     stream: bool,
+    /// Active la séparation du raisonnement dans le champ `thinking`.
+    /// Uniquement envoyé pour les modèles qui déclarent la capacité `thinking`
+    /// (sinon Ollama renvoie une erreur "does not support thinking").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    think: Option<bool>,
     options: OllamaOptions,
     /// Outils activés (format OpenAI-compatible function calling).
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
@@ -112,6 +117,13 @@ struct OllamaChunkToolFn {
     arguments: serde_json::Value,
 }
 
+/// Capacités d'un modèle Ollama, détectées via `/api/show`.
+#[derive(Debug, Clone, Copy)]
+struct ModelCaps {
+    tools: bool,
+    thinking: bool,
+}
+
 impl OllamaProvider {
     pub fn new(endpoint: Option<String>) -> Self {
         let endpoint = endpoint.unwrap_or_else(|| DEFAULT_ENDPOINT.to_string());
@@ -121,6 +133,103 @@ impl OllamaProvider {
             .expect("échec de construction du client HTTP pour Ollama");
         Self { endpoint, client }
     }
+
+    /// Interroge `POST /api/show` pour connaître les capacités du modèle
+    /// (`tools`, `thinking`). Cela évite d'envoyer `tools`/`think` à un modèle
+    /// qui ne les supporte pas — ce qui fait échouer la requête avec un HTTP
+    /// 400 (ex: DeepSeek-R1 ne supporte pas les tools).
+    ///
+    /// En cas d'échec (Ollama trop ancien, pas de champ `capabilities`), on
+    /// retombe sur `{ tools: true, thinking: false }` : comportement historique
+    /// avec retry sans tools si le modèle renvoie une erreur.
+    async fn model_capabilities(&self, model: &str) -> ModelCaps {
+        let url = format!("{}/api/show", self.endpoint.trim_end_matches('/'));
+        let resp = self
+            .client
+            .post(&url)
+            .json(&serde_json::json!({ "model": model }))
+            .send()
+            .await;
+        let Ok(resp) = resp else {
+            return ModelCaps { tools: true, thinking: false };
+        };
+        if !resp.status().is_success() {
+            return ModelCaps { tools: true, thinking: false };
+        }
+
+        #[derive(Deserialize)]
+        struct ShowResp {
+            #[serde(default)]
+            capabilities: Vec<String>,
+        }
+        match resp.json::<ShowResp>().await {
+            Ok(show) if !show.capabilities.is_empty() => ModelCaps {
+                tools: show.capabilities.iter().any(|c| c == "tools"),
+                thinking: show.capabilities.iter().any(|c| c == "thinking"),
+            },
+            _ => ModelCaps { tools: true, thinking: false },
+        }
+    }
+}
+
+/// Longueur du plus long suffixe de `buf` qui est un préfixe (partiel) de
+/// `tag`. Sert à ne pas émettre un début de balise `<think>`/`</think>` coupé
+/// entre deux chunks de streaming.
+fn partial_tag_suffix(buf: &str, tag: &str) -> usize {
+    let max = tag.len().min(buf.len());
+    for len in (1..=max).rev() {
+        let start = buf.len() - len;
+        if buf.is_char_boundary(start) && tag.starts_with(&buf[start..]) {
+            return len;
+        }
+    }
+    0
+}
+
+/// Sépare un fragment de contenu streamé en segments de raisonnement
+/// (`<think>...</think>`) et de réponse. Gère les balises coupées entre
+/// chunks via le buffer `buf` et l'état `in_think`. Filet de sécurité pour les
+/// modèles qui émettent le raisonnement inline dans `content` plutôt que dans
+/// le champ `thinking` séparé.
+fn split_think(fragment: &str, buf: &mut String, in_think: &mut bool) -> Vec<ChatEvent> {
+    buf.push_str(fragment);
+    let mut events = Vec::new();
+    loop {
+        if *in_think {
+            if let Some(pos) = buf.find("</think>") {
+                let thought: String = buf.drain(..pos).collect();
+                buf.drain(.."</think>".len());
+                if !thought.is_empty() {
+                    events.push(ChatEvent::Thinking(thought));
+                }
+                *in_think = false;
+            } else {
+                let keep = partial_tag_suffix(buf, "</think>");
+                let emit_len = buf.len() - keep;
+                if emit_len > 0 {
+                    let thought: String = buf.drain(..emit_len).collect();
+                    events.push(ChatEvent::Thinking(thought));
+                }
+                break;
+            }
+        } else if let Some(pos) = buf.find("<think>") {
+            let text: String = buf.drain(..pos).collect();
+            buf.drain(.."<think>".len());
+            if !text.is_empty() {
+                events.push(ChatEvent::Token(text));
+            }
+            *in_think = true;
+        } else {
+            let keep = partial_tag_suffix(buf, "<think>");
+            let emit_len = buf.len() - keep;
+            if emit_len > 0 {
+                let text: String = buf.drain(..emit_len).collect();
+                events.push(ChatEvent::Token(text));
+            }
+            break;
+        }
+    }
+    events
 }
 
 #[async_trait]
@@ -142,33 +251,50 @@ impl Provider for OllamaProvider {
 
     async fn stream(&self, req: ChatRequest) -> BoxStream<'static, ChatEvent> {
         let url = format!("{}/api/chat", self.endpoint.trim_end_matches('/'));
-        let tools = req
-            .tools
+
+        // Détecte les capacités du modèle pour n'envoyer `tools`/`think` que
+        // s'ils sont supportés (évite les HTTP 400 "does not support tools").
+        let caps = self.model_capabilities(&req.model).await;
+
+        let tools = if caps.tools {
+            req.tools
+                .iter()
+                .map(|t| OllamaTool {
+                    kind: "function".into(),
+                    function: OllamaToolDef {
+                        name: t.name.clone(),
+                        description: t.description.clone(),
+                        parameters: t.parameters.clone(),
+                    },
+                })
+                .collect::<Vec<_>>()
+        } else {
+            if !req.tools.is_empty() {
+                tracing::info!(
+                    "Modèle {} ne supporte pas les tools — envoi sans outils",
+                    req.model
+                );
+            }
+            Vec::new()
+        };
+
+        let messages: Vec<OllamaMessage> = req
+            .messages
             .iter()
-            .map(|t| OllamaTool {
-                kind: "function".into(),
-                function: OllamaToolDef {
-                    name: t.name.clone(),
-                    description: t.description.clone(),
-                    parameters: t.parameters.clone(),
-                },
+            .map(|m| OllamaMessage {
+                role: m.role.as_str().into(),
+                content: m.content.clone(),
+                images: Vec::new(),
+                tool_call_id: None,
+                tool_calls: Vec::new(),
             })
-            .collect::<Vec<_>>();
+            .collect();
 
         let body = OllamaChatRequest {
             model: req.model.clone(),
-            messages: req
-                .messages
-                .iter()
-                .map(|m| OllamaMessage {
-                    role: m.role.as_str().into(),
-                    content: m.content.clone(),
-                    images: Vec::new(),
-                    tool_call_id: None,
-                    tool_calls: Vec::new(),
-                })
-                .collect(),
+            messages,
             stream: true,
+            think: if caps.thinking { Some(true) } else { None },
             options: OllamaOptions {
                 temperature: req.temperature,
                 num_predict: req.max_tokens,
@@ -179,7 +305,9 @@ impl Provider for OllamaProvider {
         let client = self.client.clone();
 
         let s = async_stream::stream! {
-            let response = match client.post(&url).json(&body).send().await {
+            // Première tentative.
+            let mut body = body;
+            let mut response = match client.post(&url).json(&body).send().await {
                 Ok(r) => r,
                 Err(e) => {
                     yield ChatEvent::Error(format!(
@@ -189,6 +317,28 @@ impl Provider for OllamaProvider {
                     return;
                 }
             };
+
+            // Filet de sécurité : si la détection de capacités a échoué et que
+            // le modèle refuse les tools, on retente une fois sans outils.
+            if response.status() == reqwest::StatusCode::BAD_REQUEST && !body.tools.is_empty() {
+                let text = response.text().await.unwrap_or_default();
+                if text.contains("does not support tools") {
+                    tracing::warn!("Modèle {} ne supporte pas les tools, nouvel essai sans", body.model);
+                    body.tools.clear();
+                    response = match client.post(&url).json(&body).send().await {
+                        Ok(r) => r,
+                        Err(e) => {
+                            yield ChatEvent::Error(format!("Ollama injoignable: {e}"));
+                            yield ChatEvent::Done(Usage::default());
+                            return;
+                        }
+                    };
+                } else {
+                    yield ChatEvent::Error(format!("Ollama a répondu 400: {text}"));
+                    yield ChatEvent::Done(Usage::default());
+                    return;
+                }
+            }
 
             if !response.status().is_success() {
                 let status = response.status();
@@ -201,6 +351,9 @@ impl Provider for OllamaProvider {
             let mut bytes_stream = response.bytes_stream();
             let mut buffer: Vec<u8> = Vec::new();
             let mut usage = Usage::default();
+            // État du parseur de balises <think> inline (fallback).
+            let mut think_buf = String::new();
+            let mut in_think = false;
 
             while let Some(chunk_res) = bytes_stream.next().await {
                 match chunk_res {
@@ -213,13 +366,20 @@ impl Provider for OllamaProvider {
                                 Err(_) => continue,
                             };
                             if line_str.is_empty() { continue; }
-                            let Ok(parsed) = serde_json::from_str::<OllamaChatChunk>(line_str) else { continue };
+                            let Ok(parsed) = serde_json::from_str::<OllamaChatChunk>(line_str) else {
+                                tracing::debug!("chunk Ollama non parsé: {}", line_str);
+                                continue
+                            };
                             if let Some(msg) = parsed.message {
+                                // Champ `thinking` séparé (modèles thinking).
                                 if !msg.thinking.is_empty() {
                                     yield ChatEvent::Thinking(msg.thinking);
                                 }
+                                // Contenu : on sépare un éventuel <think> inline.
                                 if !msg.content.is_empty() {
-                                    yield ChatEvent::Token(msg.content);
+                                    for ev in split_think(&msg.content, &mut think_buf, &mut in_think) {
+                                        yield ev;
+                                    }
                                 }
                                 for tc in msg.tool_calls {
                                     yield ChatEvent::ToolCall(super::ToolCall {
@@ -230,6 +390,14 @@ impl Provider for OllamaProvider {
                                 }
                             }
                             if parsed.done {
+                                // Flush du reliquat éventuel du buffer <think>.
+                                if !think_buf.is_empty() {
+                                    if in_think {
+                                        yield ChatEvent::Thinking(std::mem::take(&mut think_buf));
+                                    } else {
+                                        yield ChatEvent::Token(std::mem::take(&mut think_buf));
+                                    }
+                                }
                                 usage.tokens_in = parsed.prompt_eval_count.unwrap_or(0);
                                 usage.tokens_out = parsed.eval_count.unwrap_or(0);
                                 yield ChatEvent::Done(usage);
@@ -245,6 +413,9 @@ impl Provider for OllamaProvider {
                 }
             }
             // Ollama a coupé sans `done: true` (timeout / déconnexion).
+            if !think_buf.is_empty() {
+                yield ChatEvent::Token(std::mem::take(&mut think_buf));
+            }
             yield ChatEvent::Done(usage);
         };
 

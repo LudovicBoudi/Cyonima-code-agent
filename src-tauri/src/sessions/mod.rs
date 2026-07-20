@@ -76,6 +76,9 @@ pub struct SessionInner {
     /// Contexte de conversation (incluant le AGENTS.md en tête). Mutex car
     /// partagé entre la task de streaming et les forks.
     pub messages: Mutex<Vec<ChatMessage>>,
+    /// Modèle courant, sélectionné via le menu déroulant du chat. Peut être
+    /// vide à la création : l'UI le renseigne avant le premier envoi.
+    pub current_model: Mutex<String>,
     /// Permet à `session_cancel` d'interrompre le stream courant.
     pub cancel: CancellationToken,
     /// `true` si un stream est en cours — protège contre les envois concurrents.
@@ -100,12 +103,14 @@ impl Default for SessionManager {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TokenEvent {
     pub session_id: String,
     pub token: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ToolCallEvent {
     pub session_id: String,
     pub call_id: String,
@@ -114,6 +119,7 @@ pub struct ToolCallEvent {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ToolResultEvent {
     pub session_id: String,
     pub call_id: String,
@@ -123,12 +129,22 @@ pub struct ToolResultEvent {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ThinkingEvent {
     pub session_id: String,
     pub token: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelLoadingEvent {
+    pub session_id: String,
+    pub loading: bool,
+    pub progress: f32, // 0.0 - 100.0
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DoneEvent {
     pub session_id: String,
     pub usage: providers::Usage,
@@ -138,6 +154,7 @@ pub struct DoneEvent {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ErrorEvent {
     pub session_id: String,
     pub error: String,
@@ -188,6 +205,7 @@ impl SessionManager {
                 provider,
                 tools: ToolRegistry::built_in(),
                 messages: Mutex::new(messages),
+                current_model: Mutex::new(info.model_id.clone()),
                 cancel: CancellationToken::new(),
                 busy: Mutex::new(false),
                 persistence: self.persistence.clone(),
@@ -240,6 +258,7 @@ impl SessionManager {
             provider,
             tools: ToolRegistry::built_in(),
             messages: Mutex::new(initial_messages),
+            current_model: Mutex::new(info.model_id.clone()),
             cancel: CancellationToken::new(),
             busy: Mutex::new(false),
             persistence: self.persistence.clone(),
@@ -300,11 +319,13 @@ impl SessionManager {
             }
         }
 
+        let current_model = { src.current_model.lock().await.clone() };
         let inner = Arc::new(SessionInner {
             info: forked.clone(),
             provider,
             tools,
             messages: Mutex::new(messages),
+            current_model: Mutex::new(current_model),
             cancel: CancellationToken::new(),
             busy: Mutex::new(false),
             persistence: src.persistence.clone(),
@@ -315,20 +336,37 @@ impl SessionManager {
     }
 
     /// Envoie un message utilisateur et lance la boucle d'agent.
+    ///
+    /// `model` : modèle sélectionné dans le menu déroulant du chat. S'il est
+    /// fourni (et non vide), il devient le modèle courant de la session.
     pub async fn send(
         &self,
         app: AppHandle,
         gateway: Arc<Gateway>,
         session_id: String,
         message: String,
+        model: Option<String>,
     ) -> Result<(), String> {
+        tracing::info!("=== DEBUT session_send pour session {} ===", session_id);
+        tracing::info!("Message reçu: '{}'", message);
+        
         let session = self
             .get(&session_id)
             .ok_or_else(|| format!("Session '{session_id}' introuvable"))?;
 
+        tracing::info!("Session trouvée, provider: {:?}", session.info.provider_id);
+
+        // Met à jour le modèle courant si l'UI en a fourni un.
+        if let Some(m) = model {
+            if !m.trim().is_empty() {
+                *session.current_model.lock().await = m;
+            }
+        }
+
         {
             let mut busy = session.busy.lock().await;
             if *busy {
+                tracing::warn!("Session {} déjà en cours", session_id);
                 return Err(
                     "Un stream est déjà en cours sur cette session — annulez-le d'abord.".into(),
                 );
@@ -343,6 +381,7 @@ impl SessionManager {
         {
             let mut msgs = session.messages.lock().await;
             msgs.push(user_msg.clone());
+            tracing::info!("Message utilisateur ajouté, total messages: {}", msgs.len());
         }
         if let Some(p) = &session.persistence {
             if let Err(e) = p.append_message(&session_id, &user_msg).await {
@@ -351,6 +390,7 @@ impl SessionManager {
         }
 
         let task_session = Arc::clone(&session);
+        tracing::info!("Lancement de la tâche agent_loop pour session {}", session_id);
         tokio::spawn(async move {
             agent_loop(app, gateway, task_session).await;
         });
@@ -385,35 +425,89 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
     let cancel = session.cancel.clone();
     let session_id = session.info.id.clone();
     let specs = session.tools.specs();
+    let model = { session.current_model.lock().await.clone() };
+
+    tracing::info!("=== DEBUT agent_loop pour session {} ===", session_id);
+    tracing::info!("Provider: {:?}, Model: {}", session.info.provider_id, model);
+
+    // Sans modèle sélectionné, on ne peut rien envoyer au provider.
+    if model.trim().is_empty() {
+        let _ = app.emit(
+            "session:error",
+            ErrorEvent {
+                session_id: session_id.clone(),
+                error: "Aucun modèle sélectionné — choisissez-en un dans le menu déroulant du chat.".into(),
+            },
+        );
+        let mut busy = session.busy.lock().await;
+        *busy = false;
+        return;
+    }
 
     let mut final_assistant = String::new();
     let mut final_usage = providers::Usage::default();
     let mut errored = false;
 
-    for _ in 0..=MAX_TOOL_ITERATIONS {
+    for iteration in 0..=MAX_TOOL_ITERATIONS {
         if cancel.is_cancelled() {
+            tracing::info!("Agent loop annulée pour session {}", session_id);
             break;
         }
 
+        tracing::info!("Itération {} pour session {}", iteration, session_id);
+
         let messages = { session.messages.lock().await.clone() };
+        tracing::info!("Nombre de messages dans l'historique: {}", messages.len());
+        
         let req = ChatRequest {
             messages,
-            model: session.info.model_id.clone(),
+            model: model.clone(),
             tools: specs.clone(),
             ..Default::default()
         };
 
+        tracing::info!("Appel du provider.stream() pour session {}", session_id);
+        
+        // Pour LlamaCpp, émettre un événement de début de chargement si c'est le premier appel
+        if session.info.provider_id == crate::providers::ProviderKind::LlamaCpp {
+            let _ = app.emit(
+                "session:model_loading",
+                crate::sessions::ModelLoadingEvent {
+                    session_id: session_id.clone(),
+                    loading: true,
+                    progress: 10.0, // Progression indéterminée au début
+                },
+            );
+        }
+        
         let mut stream = session.provider.stream(req).await;
         let mut assistant_buffer = String::new();
         let mut tool_calls: Vec<providers::ToolCall> = Vec::new();
         let mut had_error = false;
+        let mut first_token = true;
 
+        tracing::info!("Début de lecture du stream pour session {}", session_id);
         while let Some(event) = stream.next().await {
             if cancel.is_cancelled() {
+                tracing::info!("Stream annulé pour session {}", session_id);
                 break;
             }
             match event {
                 ChatEvent::Token(tok) => {
+                    // Émettre la fin du chargement au premier token pour LlamaCpp
+                    if first_token && session.info.provider_id == crate::providers::ProviderKind::LlamaCpp {
+                        let _ = app.emit(
+                            "session:model_loading",
+                            crate::sessions::ModelLoadingEvent {
+                                session_id: session_id.clone(),
+                                loading: false,
+                                progress: 100.0,
+                            },
+                        );
+                        first_token = false;
+                    }
+                    
+                    tracing::debug!("Token reçu pour session {}: '{}'", session_id, tok);
                     assistant_buffer.push_str(&tok);
                     let _ = app.emit(
                         "session:token",
@@ -424,6 +518,7 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
                     );
                 }
                 ChatEvent::Thinking(tok) => {
+                    tracing::debug!("Thinking reçu pour session {}: '{}'", session_id, tok);
                     let _ = app.emit(
                         "session:thinking",
                         ThinkingEvent {
@@ -449,13 +544,27 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
                     break;
                 }
                 ChatEvent::Error(err) => {
+                    tracing::error!("Erreur dans le stream pour session {}: {}", session_id, err);
+                    
+                    // Émettre la fin du chargement en cas d'erreur pour LlamaCpp
+                    if session.info.provider_id == crate::providers::ProviderKind::LlamaCpp {
+                        let _ = app.emit(
+                            "session:model_loading",
+                            crate::sessions::ModelLoadingEvent {
+                                session_id: session_id.clone(),
+                                loading: false,
+                                progress: 0.0, // 0 pour indiquer une erreur
+                            },
+                        );
+                    }
+                    
                     had_error = true;
                     errored = true;
                     let _ = app.emit(
                         "session:error",
                         ErrorEvent {
                             session_id: session_id.clone(),
-                            error: err,
+                            error: err.clone(),
                         },
                     );
                 }
@@ -567,9 +676,11 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
     {
         let mut busy = session.busy.lock().await;
         *busy = false;
+        tracing::info!("Session {} libérée (busy=false)", session_id);
     }
 
     if !errored && !cancel.is_cancelled() {
+        tracing::info!("Émission de session:done pour session {}", session_id);
         let _ = app.emit(
             "session:done",
             DoneEvent {
@@ -578,7 +689,10 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
                 assistant_message: final_assistant,
             },
         );
+    } else {
+        tracing::warn!("Agent loop terminé avec erreur ou annulation pour session {}", session_id);
     }
+    tracing::info!("=== FIN agent_loop pour session {} ===", session_id);
 }
 
 /// Canonise le chemin workspace en absolu. En cas d'échec (workspace relatif

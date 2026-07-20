@@ -10,6 +10,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use async_stream;
 use async_trait::async_trait;
 use candle_core::quantized::gguf_file;
 use candle_core::quantized::tokenizer::TokenizerFromGguf;
@@ -214,12 +215,103 @@ fn load_gguf<P: AsRef<Path>>(path: P) -> Result<GgufModelState, String> {
 // Génération token-par-token (appelé dans un blocking task)
 // ---------------------------------------------------------------------------
 
+/// État pour tracker le parsing du thinking
+#[derive(Debug, Clone)]
+struct ThinkingState {
+    /// Buffer accumulant le texte en cours de parsing
+    buffer: String,
+    /// Indique si on est actuellement dans une section <think>
+    in_thinking: bool,
+    /// Contenu thinking extrait
+    thinking_content: String,
+}
+
+impl ThinkingState {
+    fn new() -> Self {
+        Self {
+            buffer: String::new(),
+            in_thinking: false,
+            thinking_content: String::new(),
+        }
+    }
+
+    /// Traite un nouveau token et retourne (thinking_token, content_token)
+    fn process_token(&mut self, token: &str) -> (Option<String>, Option<String>) {
+        self.buffer.push_str(token);
+        
+        let mut thinking_output = None;
+        let mut content_output = None;
+
+        // Détecte l'ouverture de balise <think>
+        if !self.in_thinking && self.buffer.contains("<think>") {
+            if let Some(pos) = self.buffer.find("<think>") {
+                // Contenu avant <think> va dans content
+                if pos > 0 {
+                    let before_think = &self.buffer[..pos];
+                    if !before_think.trim().is_empty() {
+                        content_output = Some(before_think.to_string());
+                    }
+                }
+                
+                // On entre en mode thinking
+                self.in_thinking = true;
+                let after_think = &self.buffer[pos + 7..]; // 7 = len("<think>")
+                self.buffer = after_think.to_string();
+                self.thinking_content.clear();
+            }
+        }
+        
+        // Détecte la fermeture de balise </think>
+        if self.in_thinking && self.buffer.contains("</think>") {
+            if let Some(pos) = self.buffer.find("</think>") {
+                // Contenu avant </think> va dans thinking
+                let think_part = &self.buffer[..pos];
+                self.thinking_content.push_str(think_part);
+                
+                if !self.thinking_content.trim().is_empty() {
+                    thinking_output = Some(self.thinking_content.clone());
+                }
+                
+                // On sort du mode thinking
+                self.in_thinking = false;
+                let after_close = &self.buffer[pos + 8..]; // 8 = len("</think>")
+                self.buffer = after_close.to_string();
+                self.thinking_content.clear();
+                
+                // Le contenu après </think> va dans content s'il y en a
+                if !self.buffer.trim().is_empty() {
+                    content_output = Some(self.buffer.clone());
+                    self.buffer.clear();
+                }
+            }
+        }
+        // Si on est en mode thinking et pas de fermeture, accumule dans thinking_content
+        else if self.in_thinking {
+            self.thinking_content.push_str(&self.buffer);
+            if !self.buffer.trim().is_empty() {
+                thinking_output = Some(self.buffer.clone());
+            }
+            self.buffer.clear();
+        }
+        // Si on n'est pas en thinking et pas d'ouverture, c'est du contenu normal
+        else if !self.in_thinking && !self.buffer.contains("<think>") {
+            if !self.buffer.trim().is_empty() {
+                content_output = Some(self.buffer.clone());
+            }
+            self.buffer.clear();
+        }
+
+        (thinking_output, content_output)
+    }
+}
+
 fn generate_tokens(
     state: &mut GgufModelState,
     prompt_tokens: &[u32],
     max_tokens: usize,
     temperature: f32,
-) -> Result<(Vec<String>, usize), String> {
+    tx: tokio::sync::mpsc::Sender<ChatEvent>,
+) -> Result<usize, String> {
     use candle_transformers::generation::LogitsProcessor;
 
     let prompt_len = prompt_tokens.len();
@@ -229,9 +321,9 @@ fn generate_tokens(
         Some(temperature as f64)
     };
     let mut logits_processor = LogitsProcessor::new(42, temp, None);
+    let mut thinking_state = ThinkingState::new();
 
     let mut index_pos = 0;
-    let mut all_texts: Vec<String> = Vec::new();
 
     // Forward pass sur le prompt complet.
     let logits = state.model.forward(prompt_tokens, index_pos)?;
@@ -248,7 +340,15 @@ fn generate_tokens(
         .tokenizer
         .decode(&[next_token], true)
         .unwrap_or_default();
-    all_texts.push(first_text);
+    
+    // Process du premier token
+    let (thinking_token, content_token) = thinking_state.process_token(&first_text);
+    if let Some(think) = thinking_token {
+        let _ = tx.blocking_send(ChatEvent::Thinking(think));
+    }
+    if let Some(content) = content_token {
+        let _ = tx.blocking_send(ChatEvent::Token(content));
+    }
 
     // Boucle de génération.
     for _ in 0..max_tokens.saturating_sub(1) {
@@ -269,10 +369,18 @@ fn generate_tokens(
             .tokenizer
             .decode(&[next_token], true)
             .unwrap_or_default();
-        all_texts.push(text);
+
+        // Process du token avec thinking
+        let (thinking_token, content_token) = thinking_state.process_token(&text);
+        if let Some(think) = thinking_token {
+            let _ = tx.blocking_send(ChatEvent::Thinking(think));
+        }
+        if let Some(content) = content_token {
+            let _ = tx.blocking_send(ChatEvent::Token(content));
+        }
     }
 
-    Ok((all_texts, prompt_len))
+    Ok(prompt_len)
 }
 
 // ---------------------------------------------------------------------------
@@ -353,10 +461,46 @@ impl Provider for LlamaCppProvider {
     }
 
     async fn stream(&self, req: ChatRequest) -> BoxStream<'static, ChatEvent> {
-        let Some(state) = self.state.clone() else {
-            let msg = String::from(
-                "Aucun modèle GGUF chargé. Importez un fichier .gguf via \
+        let model_path = if self.state.is_some() {
+            // Modèle déjà chargé
+            None
+        } else {
+            // Essayer de résoudre l'ID du modèle via le registry
+            match crate::models::registry::Registry::open_default().await {
+                Ok(registry) => registry.path_of(&req.model).await.map(|p| p.to_string_lossy().to_string()),
+                Err(e) => {
+                    tracing::error!("Échec d'ouverture du registry: {}", e);
+                    None
+                }
+            }
+        };
+        
+        let state = if let Some(path) = model_path {
+            tracing::info!("Chargement du modèle LlamaCpp depuis: {}", path);
+            
+            match load_gguf(&path) {
+                Ok(state) => Some(Arc::new(tokio::sync::Mutex::new(state))),
+                Err(e) => {
+                    let msg = format!(
+                        "Impossible de charger le modèle GGUF '{}' depuis '{}': {}",
+                        req.model, path, e
+                    );
+                    return futures::stream::once(async move { ChatEvent::Error(msg) })
+                        .chain(futures::stream::once(async {
+                            ChatEvent::Done(Usage::default())
+                        }))
+                        .boxed();
+                }
+            }
+        } else {
+            self.state.clone()
+        };
+        
+        let Some(state) = state else {
+            let msg = format!(
+                "Aucun modèle GGUF chargé pour '{}'. Importez un fichier .gguf via \
                  le catalogue ou la page Import pour activer l'inférence locale.",
+                req.model
             );
             return futures::stream::once(async move { ChatEvent::Error(msg) })
                 .chain(futures::stream::once(async {
@@ -369,7 +513,7 @@ impl Provider for LlamaCppProvider {
         let max_tokens = req.max_tokens.unwrap_or(2048) as usize;
         let temperature = req.temperature.unwrap_or(0.7);
 
-        let (tx, rx) = tokio::sync::mpsc::channel::<ChatEvent>(256);
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<ChatEvent>(256);
 
         tokio::task::spawn_blocking(move || {
             let rt = tokio::runtime::Handle::current();
@@ -391,16 +535,11 @@ impl Provider for LlamaCppProvider {
                 return;
             }
 
-            match generate_tokens(&mut guard, prompt_tokens, max_tokens, temperature) {
-                Ok((texts, prompt_len)) => {
-                    let mut tokens_out = 0u32;
-                    for text in &texts {
-                        let _ = tx.blocking_send(ChatEvent::Token(text.clone()));
-                        tokens_out += 1;
-                    }
+            match generate_tokens(&mut guard, prompt_tokens, max_tokens, temperature, tx.clone()) {
+                Ok(prompt_len) => {
                     let _ = tx.blocking_send(ChatEvent::Done(Usage {
                         tokens_in: prompt_len as u32,
-                        tokens_out,
+                        tokens_out: max_tokens as u32, // Approximation
                     }));
                 }
                 Err(e) => {
@@ -410,6 +549,12 @@ impl Provider for LlamaCppProvider {
             }
         });
 
-        tokio_stream::wrappers::ReceiverStream::new(rx).boxed()
+        let stream = async_stream::stream! {
+            while let Some(event) = rx.recv().await {
+                yield event;
+            }
+        };
+
+        stream.boxed()
     }
 }

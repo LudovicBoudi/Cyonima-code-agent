@@ -1,8 +1,6 @@
 import { create } from "zustand";
-import type { SessionInfo, ChatMessage } from "../lib/ipc";
+import type { SessionInfo, ChatMessage, OllamaModelInfo } from "../lib/ipc";
 import { ipc } from "../lib/ipc";
-
-type ProviderId = "llama_cpp" | "ollama" | "openai" | "anthropic" | "gemini" | "openai_compat";
 
 export interface ToolCallItem {
   callId: string;
@@ -26,6 +24,14 @@ interface SessionsState {
   loaded: boolean;
   /// Contenu thinking en cours de réception par session.
   thinking: Record<string, string>;
+  /// État de chargement des modèles par session (pour les providers locaux).
+  modelLoading: Record<string, boolean>;
+  /// Progression du chargement des modèles (0-100).
+  modelLoadingProgress: Record<string, number>;
+  /// Modèle Ollama sélectionné par session (menu déroulant du chat).
+  selectedModels: Record<string, string>;
+  /// Liste des modèles installés dans Ollama (source du menu déroulant).
+  installedOllamaModels: OllamaModelInfo[];
 
   /// Au démarrage : charge les sessions persistées et, pour la dernière
   /// active (la plus récente), restaure aussi ses messages.
@@ -36,11 +42,12 @@ interface SessionsState {
 
   startCreating: () => void;
   cancelCreating: () => void;
-  createSession: (p: {
-    workspace: string;
-    modelId: string;
-    providerId: ProviderId;
-  }) => Promise<void>;
+  createSession: (p: { workspace: string }) => Promise<void>;
+
+  /// Charge la liste des modèles installés dans Ollama.
+  loadInstalledOllamaModels: () => Promise<void>;
+  /// Sélectionne le modèle courant d'une session.
+  setSelectedModel: (sessionId: string, model: string) => void;
 
   setActive: (id: string | null) => void;
   deleteSession: (sessionId: string) => Promise<void>;
@@ -50,6 +57,9 @@ interface SessionsState {
   clearThinking: (sessionId: string) => void;
   setStreaming: (sessionId: string, streaming: boolean) => void;
   setError: (sessionId: string, error: string | null) => void;
+  setModelLoading: (sessionId: string, loading: boolean) => void;
+  setModelLoadingProgress: (sessionId: string, progress: number) => void;
+  markModelReady: (sessionId: string) => void;
 
   addToolCall: (sessionId: string, call: ToolCallItem) => void;
   setToolResult: (sessionId: string, callId: string, output: string, isError: boolean) => void;
@@ -69,6 +79,25 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   creating: false,
   loaded: false,
   thinking: {},
+  modelLoading: {},
+  modelLoadingProgress: {},
+  selectedModels: {},
+  installedOllamaModels: [],
+
+  loadInstalledOllamaModels: async () => {
+    try {
+      const models = await ipc.ollamaListModels();
+      set({ installedOllamaModels: Array.isArray(models) ? models : [] });
+    } catch (e) {
+      console.error("ollamaListModels error", e);
+      set({ installedOllamaModels: [] });
+    }
+  },
+
+  setSelectedModel: (sessionId, model) =>
+    set((st) => ({
+      selectedModels: { ...st.selectedModels, [sessionId]: model },
+    })),
 
   loadAll: async () => {
     try {
@@ -79,15 +108,40 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       const streaming: Record<string, boolean> = {};
       const errors: Record<string, string | null> = {};
       const thinking: Record<string, string> = {};
+      const modelLoading: Record<string, boolean> = {};
+      const modelLoadingProgress: Record<string, number> = {};
       for (const s of list) {
         messages[s.id] = [];
         toolCalls[s.id] = [];
         streaming[s.id] = false;
         errors[s.id] = null;
         thinking[s.id] = "";
+        modelLoading[s.id] = false;
+        modelLoadingProgress[s.id] = 0;
       }
       const activeId = list.length > 0 ? list[0].id : null;
-      set({ sessions: list, activeSessionId: activeId, messages, toolCalls, streaming, errors, thinking, loaded: true });
+      
+      // Pour la session active, si c'est LlamaCpp, marquer comme en chargement
+      if (activeId) {
+        const activeSession = list.find(s => s.id === activeId);
+        if (activeSession?.providerId === "llama_cpp") {
+          modelLoading[activeId] = true;
+          modelLoadingProgress[activeId] = 0;
+        }
+      }
+      
+      set({ 
+        sessions: list, 
+        activeSessionId: activeId, 
+        messages, 
+        toolCalls, 
+        streaming, 
+        errors, 
+        thinking, 
+        modelLoading,
+        modelLoadingProgress,
+        loaded: true 
+      });
       // Restaure aussi les messages de la plus récente.
       if (activeId) {
         await get().restoreMessages(activeId);
@@ -110,8 +164,12 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   startCreating: () => set({ creating: true }),
   cancelCreating: () => set({ creating: false }),
 
-  createSession: async ({ workspace, modelId, providerId }) => {
-    const info = await ipc.sessionCreate({ workspace, modelId, providerId });
+  createSession: async ({ workspace }) => {
+    // Provider Ollama unique ; le modèle est choisi ensuite via le menu
+    // déroulant du chat (créé vide côté backend).
+    const info = await ipc.sessionCreate({ workspace, modelId: "", providerId: "ollama" });
+    // Pré-sélectionne le premier modèle Ollama installé, s'il y en a.
+    const firstModel = get().installedOllamaModels[0]?.name ?? "";
     set((st) => ({
       sessions: [...st.sessions, info],
       activeSessionId: info.id,
@@ -121,10 +179,31 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       streaming: { ...st.streaming, [info.id]: false },
       errors: { ...st.errors, [info.id]: null },
       thinking: { ...st.thinking, [info.id]: "" },
+      modelLoading: { ...st.modelLoading, [info.id]: false },
+      modelLoadingProgress: { ...st.modelLoadingProgress, [info.id]: 0 },
+      selectedModels: { ...st.selectedModels, [info.id]: firstModel },
     }));
   },
 
-  setActive: (id) => set({ activeSessionId: id, creating: false }),
+  setActive: (id) => {
+    set((st) => {
+      const newState = { activeSessionId: id, creating: false };
+      
+      // Si la nouvelle session active utilise LlamaCpp, marquer comme en chargement
+      if (id) {
+        const session = st.sessions.find(s => s.id === id);
+        if (session?.providerId === "llama_cpp") {
+          return {
+            ...newState,
+            modelLoading: { ...st.modelLoading, [id]: true },
+            modelLoadingProgress: { ...st.modelLoadingProgress, [id]: 0 },
+          };
+        }
+      }
+      
+      return newState;
+    });
+  },
 
   deleteSession: async (sessionId) => {
     try {
@@ -189,6 +268,18 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   setError: (sessionId, error) =>
     set((st) => ({ errors: { ...st.errors, [sessionId]: error } })),
 
+  setModelLoading: (sessionId, loading) =>
+    set((st) => ({ modelLoading: { ...st.modelLoading, [sessionId]: loading } })),
+
+  setModelLoadingProgress: (sessionId, progress) =>
+    set((st) => ({ modelLoadingProgress: { ...st.modelLoadingProgress, [sessionId]: progress } })),
+
+  markModelReady: (sessionId) =>
+    set((st) => ({ 
+      modelLoading: { ...st.modelLoading, [sessionId]: false },
+      modelLoadingProgress: { ...st.modelLoadingProgress, [sessionId]: 100 }
+    })),
+
   addToolCall: (sessionId, call) =>
     set((st) => ({
       toolCalls: {
@@ -208,12 +299,13 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   send: async (sessionId, message) => {
     const st = get();
     if (st.streaming[sessionId]) return;
-    // Nettoie les tool calls du tour précédent avant d'enregistrer le user msg.
+    // Désactiver le loading de modèle dès qu'on envoie un message (le backend gérera le vrai loading)
     set((s) => ({
       errors: { ...s.errors, [sessionId]: null },
       streaming: { ...s.streaming, [sessionId]: true },
       toolCalls: { ...s.toolCalls, [sessionId]: [] },
       thinking: { ...s.thinking, [sessionId]: "" },
+      modelLoading: { ...s.modelLoading, [sessionId]: false },
       messages: {
         ...s.messages,
         [sessionId]: [
@@ -223,7 +315,8 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       },
     }));
     try {
-      await ipc.sessionSend({ sessionId, message });
+      const model = get().selectedModels[sessionId];
+      await ipc.sessionSend({ sessionId, message, model });
     } catch (e) {
       set((s) => ({
         streaming: { ...s.streaming, [sessionId]: false },

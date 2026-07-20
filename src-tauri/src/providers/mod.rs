@@ -111,6 +111,7 @@ pub struct ToolResult {
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Usage {
     pub tokens_in: u32,
     pub tokens_out: u32,

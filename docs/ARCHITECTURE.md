@@ -5,39 +5,35 @@
 ```
 ┌──────────────────────────────────────────────────────────┐
 │  Frontend React (UI)                                       │
-│  ├─ Projects        (ouverture / workspace)               │
 │  ├─ Sessions        (onglets multi-agents parallèles)      │
-│  ├─ Models           (installés, catalogue, import custom) │
-│  ├─ Settings         (providers, API keys, storage, thème)  │
-│  └─ Status bar       (session, modèle, provider, tokens)   │
+│  │   └─ menu déroulant modèle (modèles Ollama installés)   │
+│  ├─ Ollama           (modèles installés + pull)            │
+│  ├─ Config           (endpoint Ollama, permissions, thème) │
+│  └─ Status bar       (session, modèle, tokens)             │
 └───────────────────────┬────────────────────────────────────┘
                         │ Tauri IPC (commands + events)
 ┌───────────────────────┴────────────────────────────────────┐
 │  Core Rust (src-tauri/src/)                                │
 │  ├─ sessions/       gestionnaire multi-session parallèle   │
-│  ├─ providers/      trait Provider + impls                 │
-│  │   ├─ llama_cpp   (inférence locale via bindings C)       │
-│  │   ├─ ollama      (HTTP vers Ollama externe)              │
-│  │   ├─ openai      (API distante)                          │
-│  │   ├─ anthropic                                      │
-│  │   ├─ gemini                                          │
-│  │   └─ openai_compat  (LM Studio, vLLM, entreprise)        │
-│  ├─ models/         registry + downloader + import custom   │
+│  ├─ providers/      trait Provider (seul `ollama` actif)    │
+│  │   └─ ollama      (HTTP vers Ollama local)               │
 │  ├─ tools/          filesystem, bash, glob, grep            │
 │  ├─ permissions/    gateway approbation utilisateur         │
 │  ├─ config/         globale + par projet (TOML)             │
-│  ├─ indexing/       embedder + SQLite + recherche           │
 │  └─ ipc/            handlers Tauri (commands + events)      │
 └────────────────────────────────────────────────────────────┘
 ```
 
+> Le trait `Provider` reste générique pour permettre d'autres backends à
+> l'avenir, mais **seul le provider Ollama est actif** dans cette version.
+
 ## Principes de design
 
-1. **Provider abstrait** : tout backend (local ou distant) implémente le trait `Provider`. L'UI et les sessions sont agnostiques du modèle.
+1. **Provider abstrait** : le trait `Provider` découple l'UI/les sessions du backend. Seul `ollama` est implémenté et actif aujourd'hui.
 2. **Multi-session native** : chaque session est un `tokio::task` indépendant avec son propre état, modèle, outils activés et permissions. Le streaming se fait via events Tauri (un event channel par session).
 3. **Permissions explicites** : chaque appel d'outil passe par un gateway. Configurable global + per-project. Defauts prudents pour `bash`.
-4. **Pas de gros fichiers dans le repo** : seules les ressources < 50 Mo (embedder) sont committées. Tout LLM est téléchargé à l'exécution ou importé.
-5. **Privacy first** : aucune télémétrie, aucune donnée sortante non sollicitée. Les clés API vivent dans le keyring OS.
+4. **Modèles gérés par Ollama** : aucun LLM n'est committé ni téléchargé par l'app. On délègue à Ollama (`ollama pull`) ; l'app liste et utilise ce qui est installé localement.
+5. **Privacy first** : aucune télémétrie, aucune donnée sortante. Toute l'inférence passe par Ollama en local (`localhost:11434`).
 6. **Reproductibilité** : versions épinglées (Cargo.lock + package-lock), CI multi-OS.
 
 ## Trait `Provider`
@@ -52,6 +48,7 @@ pub trait Provider: Send + Sync {
 
 pub enum ChatEvent {
     Token(String),
+    Thinking(String),   // reasoning des modèles « thinking » (DeepSeek R1, Qwen3, Gemma…)
     ToolCall(ToolCall),
     ToolResult(ToolResult),
     Done(Usage),
@@ -59,30 +56,35 @@ pub enum ChatEvent {
 }
 ```
 
+### Détection de capacités Ollama
+
+Le `OllamaProvider` interroge `POST /api/show` avant chaque conversation pour
+lire les `capabilities` du modèle. Il n'envoie `tools` que si le modèle les
+supporte (évite le HTTP 400 « does not support tools » de DeepSeek-R1) et n'active
+`think: true` que pour les modèles « thinking ». Un parseur de secours extrait
+aussi le raisonnement inline `<think>…</think>` du champ `content`.
+
 ## Sessions
 
 - **Session** = agent isolé (id, modèle, provider, contexte, tools, perms)
 - **SessionManager** : pool, création/fork/cancel, persistance SQLite (`~/.cyonima/sessions.db`)
 - Possibilité de **fork** une session (copie du contexte pour dévier une conversation)
 - Une même fenêtre = N onglets = N sessions indépendantes (entre elles, même projet)
+- **Création simplifiée** : le formulaire « Nouvelle session » ne demande que le
+  répertoire de travail. Le provider est **Ollama** par défaut et le modèle se
+  choisit ensuite dans un **menu déroulant du chat** (parmi les modèles installés
+  dans Ollama). Le modèle courant est modifiable en cours de session : il est
+  transmis à chaque `session_send` et stocké dans `SessionInner.current_model`.
+- Le message `system` AGENTS.md est toujours injecté dans le contexte du LLM mais
+  **masqué de l'affichage** (remplacé par un court message de bienvenue).
 
-## Modèles
+## Modèles (via Ollama)
 
-### Sources (cahier des charges)
-1. **< 50 Mo** : embarqués (`src-tauri/resources/`). Actuellement : embedder `all-MiniLM-L6-v2` Q8.
-2. **> 50 Mo open source** : catalogue téléchargeable (`docs/models-catalog.toml` → V1: HuggingFace Hub + Ollama Library)
-3. **Entreprise / custom** : UI d'import → metadata + chemin enregistrés dans le registry local.
-
-### Téléchargeur
-- `reqwest` avec HTTP range pour reprise sur interruption
-- SHA256 post-download (checksum issu du catalogue)
-- Progression via events Tauri (`model:download:progress`)
-- Pause / cancel via `CancellationToken`
-- Vérification d'espace disque avant lancement
-
-### Registry local
-- `~/.cyonima/models/registry.json` : modèles installés, sources, licences, tailles, RAM min recommandée
-- Stockage path configurable (global ou par projet)
+- Les modèles sont **entièrement gérés par Ollama**. Cyonima ne télécharge ni ne stocke de poids.
+- **Lister** : `GET /api/tags` → `ollama_list_models` alimente le menu déroulant du chat.
+- **Installer** : `POST /api/pull` en streaming → `ollama_pull_model`, avec events de progression (`ollama:pull:progress` / `:done` / `:error`).
+- **Capacités** : `POST /api/show` détecte le support de `tools` et `thinking` par modèle (cf « Détection de capacités Ollama »).
+- Un catalogue de tags suggérés vit dans `docs/models-catalog.toml` (informatif ; c'est Ollama qui fait foi sur ce qui est réellement installé).
 
 ## Permissions
 
@@ -91,7 +93,6 @@ pub enum ChatEvent {
 | read_file, glob, grep | auto-approve |
 | write_file, edit_file | demande |
 | bash | demande + preview |
-| import custom model | auto-approve |
 
 Mécanisme : chaque tool call est enveloppé. Le gateway check `config.permissions.<tool>` puis utilise si besoin le `Command` Tauri `permission:request` qui affiche un dialogue UI.
 
@@ -107,34 +108,34 @@ Mécanisme : chaque tool call est enveloppé. Le gateway check `config.permissio
 |---|---|
 | Config globale | `~/.cyonima/config.toml` |
 | Sessions DB | `~/.cyonima/sessions.db` (SQLite) |
-| Embeddings index | `~/.cyonima/index/<project-hash>/` |
-| Modèles | configurable (défaut `~/.cyonima/models/`) |
-| API keys | keyring OS |
+| Modèles | gérés par Ollama (hors de Cyonima) |
 
 ## IPC Tauri (V1)
 
 ### Commands (frontend → backend)
-- `hardware_get {}` → snapshot RAM/CPU/OS/arch/VRAM (si détectable)
-- `hardware_can_run_model { ram_min_gb }` → bool pour griser/autoriser un download
-- `session_create { workspace, model, provider }`
-- `session_send { session_id, message }`
+- `session_create { workspace, model_id, provider_id }` — `model_id` peut être vide (choisi ensuite dans le chat), `provider_id` = `ollama`
+- `session_send { session_id, message, model? }` — `model` = modèle sélectionné dans le menu déroulant
 - `session_cancel { session_id }`
 - `session_fork { session_id }`
-- `model_list_installed {}`
-- `model_catalog_list {}`
-- `model_download { model_id, ram_min_gb? }` — garde-fou hardware en backend, `Err` si RAM < requis+1 Go
-- `model_download_cancel { model_id }`
-- `model_import_custom { path }`
-- `provider_set_api_key { provider, key }`  (via keyring)
-- `config_get`, `config_set`
+- `session_history { session_id }` / `session_delete { session_id }` / `session_list {}`
+- `ollama_list_models {}` (`GET /api/tags`) — alimente le menu déroulant du chat
+- `ollama_pull_model { model }` (`POST /api/pull` streaming)
+- `hardware_get {}` → snapshot RAM/CPU/OS/arch/VRAM
+- `hardware_can_run_model { ram_min_gb }` → bool (adéquation modèle / machine)
+- `config_get {}` / `config_get_workspace { workspace }` / `config_set_*`
 - `permission_respond { request_id, decision }`
-- `hardware_get {}` → RAM/CPU/OS/arch/VRAM
-- `hardware_can_run_model { ram_min_gb }` → bool pour griser le bouton Télécharger
+
+> Note : tous les payloads d'events de session sont sérialisés en **camelCase**
+> (`#[serde(rename_all = "camelCase")]`) pour matcher le frontend TypeScript
+> (`sessionId`, `callId`, `isError`, `tokensIn`…).
 
 ### Events (backend → frontend)
-- `session:token { session_id, token }`
-- `session:tool_call { session_id, call }`
-- `session:done { session_id, usage }`
-- `session:error { session_id, error }`
-- `model:download:progress { model_id, bytes, total }`
-- `permission:request { request_id, tool, args }`
+- `session:token { sessionId, token }`
+- `session:thinking { sessionId, token }` — reasoning streamé (affiché dans un bloc repliable)
+- `session:tool_call { sessionId, callId, tool, arguments }`
+- `session:tool_result { sessionId, callId, tool, output, isError }`
+- `session:model_loading { sessionId, loading, progress }`
+- `session:done { sessionId, usage }`
+- `session:error { sessionId, error }`
+- `ollama:pull:progress { model, status, total, completed }` (+ `:done` / `:error`)
+- `permission:request { requestId, sessionId, tool, arguments, preview? }`

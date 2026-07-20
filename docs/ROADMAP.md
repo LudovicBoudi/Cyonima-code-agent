@@ -2,6 +2,15 @@
 
 Les jalons sont prévus pour être livrés dans l'ordre. Chacun a des critères de définition (DoD) clairs.
 
+> **Recentrage Ollama (version courante)** — Le produit se limite désormais aux
+> **capacités d'Ollama** : l'inférence, la gestion et le téléchargement des
+> modèles passent tous par Ollama. Les fonctionnalités suivantes des jalons ci-dessous
+> sont **désactivées / reportées** dans cette version : backend candle GGUF intégré
+> (J1.5/J4.5), downloader GGUF direct (J4), import de GGUF custom (J5), providers
+> d'API distantes OpenAI/Anthropic/Gemini/OpenAI-compat (J6) et recherche
+> sémantique via embedder local (J8). L'historique ci-dessous est conservé à titre
+> de référence de conception.
+
 ## J0 — Squelette & socle technique  ✅ (en cours)
 - Repo Tauri 2 + React + TypeScript + Tailwind
 - Structure de modules Rust (skeletons)

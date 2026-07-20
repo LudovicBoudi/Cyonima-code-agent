@@ -1,14 +1,11 @@
 //! Registry, catalogue et downloader de modèles.
 //!
-//! Cf cahier des charges :
-//! - **< 50 Mo** : embarqués en ressources (`src-tauri/resources/`).
-//! - **> 50 Mo open source** : listés dans le catalogue TOML embarqué
-//!   (`docs/models-catalog.toml`), parsé une fois au démarrage via
-//!   `include_str!`. Téléchargeables via [`downloader::DownloadManager`].
-//! - **Entreprise / custom** : [`import_custom`] enregistre un GGUF local
-//!   dans le [`registry::Registry`].
+//! MIGRATION OLLAMA : Plus de téléchargement GGUF direct. 
+//! Seuls le registry et le catalogue Ollama restent actifs.
+//! - **Modèles Ollama** : gérés via `ollama pull`
+//! - **Modèles custom** : import via [`import_custom`] 
 
-pub mod downloader;
+// pub mod downloader; // OBSOLÈTE - utiliser Ollama
 pub mod registry;
 
 use serde::{Deserialize, Serialize};
@@ -44,22 +41,19 @@ pub struct ModelInfo {
     pub installed_path: Option<String>,
 }
 
-/// Entrée du catalogue distant téléchargeable (cf `docs/models-catalog.toml`).
+/// Entrée du catalogue Ollama (cf `docs/models-catalog.toml`).
 #[derive(Debug, Clone, Deserialize)]
 pub struct CatalogEntry {
     pub id: String,
     pub name: String,
-    pub url: String,
-    pub sha256: String,
-    pub size_bytes: u64,
     pub quantization: String,
     pub license: String,
     pub ram_min_gb: u32,
     /// Type de modèle : "general" pour généraliste, "coding" pour orienté code.
     #[serde(default = "default_model_type")]
     pub model_type: String,
-    /// Champ optionnel : tag Ollama pour usage direct sans download Cyonima.
-    pub ollama_tag: Option<String>,
+    /// Tag Ollama pour pull direct (OBLIGATOIRE).
+    pub ollama_tag: String,
 }
 
 fn default_model_type() -> String {
@@ -82,31 +76,52 @@ fn parse_catalog() -> Vec<CatalogEntry> {
     }
 }
 
-/// Renvoie les entrées brutes du catalogue (avec URL + SHA256). Utilisé par
-/// le `DownloadManager` pour récupérer l'entry à télécharger.
+/// Renvoie les entrées brutes du catalogue (pour compatibilité legacy). 
+/// OBSOLÈTE : plus utilisé pour les téléchargements directs.
 pub fn find_catalog_entry(id: &str) -> Option<CatalogEntry> {
     parse_catalog().into_iter().find(|e| e.id == id)
 }
 
-/// Renvoie le catalogue avec statut `installed` calculé à partir du registry.
+/// Renvoie le catalogue avec statut `installed` calculé à partir du registry et Ollama.
 pub async fn list_catalog(registry: &registry::Registry) -> Vec<ModelInfo> {
     let installed = registry.list().await;
+    
+    // Récupère les modèles déjà installés dans Ollama (localhost:11434).
+    // Si Ollama n'est pas joignable, on continue avec une liste vide plutôt
+    // que d'échouer : le catalogue reste consultable hors-ligne.
+    let ollama_models = crate::ipc::fetch_ollama_models("http://localhost:11434")
+        .await
+        .unwrap_or_default();
+    let ollama_tags: std::collections::HashSet<String> = ollama_models
+        .iter()
+        .map(|m| m.name.clone())
+        .collect();
+
     parse_catalog()
         .into_iter()
         .map(|e| {
             let inst = installed.iter().find(|i| i.id == e.id);
+            let ollama_installed = ollama_tags.contains(&e.ollama_tag);
+            
             ModelInfo {
                 id: e.id.clone(),
                 name: e.name.clone(),
-                size_bytes: e.size_bytes,
+                size_bytes: 0, // Pas pertinent pour Ollama
                 quantization: e.quantization.clone(),
                 license: e.license.clone(),
                 ram_min_gb: e.ram_min_gb,
                 model_type: e.model_type.clone(),
-                installed: inst.is_some(),
-                ollama_tag: e.ollama_tag.clone(),
-                url: Some(e.url.clone()).filter(|u| !u.is_empty()),
-                installed_path: inst.map(|i| i.path.clone()),
+                installed: inst.is_some() || ollama_installed,
+                ollama_tag: Some(e.ollama_tag.clone()),
+                url: None, // Plus d'URL directe
+                installed_path: inst.map(|i| i.path.clone()).or_else(|| {
+                    // Pour les modèles Ollama, indiquer qu'ils sont "installés via Ollama"
+                    if ollama_installed {
+                        Some("ollama".to_string())
+                    } else {
+                        None
+                    }
+                }),
             }
         })
         .collect()

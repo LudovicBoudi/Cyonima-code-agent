@@ -1,7 +1,16 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { ipc, type ModelInfo, type HardwareInfo } from "../lib/ipc";
 import { useDownloadsStore } from "../store/downloads";
+import { Download } from "lucide-react";
+
+/// Progression d'un pull Ollama, dérivée du flux JSON de `/api/pull`.
+type OllamaPullProgress = {
+  status: string;
+  completed: number;
+  total: number;
+};
 
 function formatSize(bytes: number): string {
   if (bytes === 0) return "—";
@@ -20,6 +29,8 @@ export function CatalogView() {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [hw, setHw] = useState<HardwareInfo | null>(null);
   const [filter, setFilter] = useState("");
+  const [ollamaPulling, setOllamaPulling] = useState<string | null>(null);
+  const [pullProgress, setPullProgress] = useState<OllamaPullProgress | null>(null);
 
   const refresh = () => {
     ipc
@@ -29,8 +40,59 @@ export function CatalogView() {
     invoke<HardwareInfo>("hardware_get").then(setHw).catch(() => null);
   };
 
+  const handleOllamaPull = async (ollamaTag: string) => {
+    try {
+      setOllamaPulling(ollamaTag);
+      setPullProgress(null);
+      await invoke("ollama_pull_model", { model: ollamaTag });
+    } catch (error) {
+      console.error("Erreur pull Ollama:", error);
+      setOllamaPulling(null);
+      setPullProgress(null);
+    }
+  };
+
+  const handleClearCache = async () => {
+    if (!confirm("Voulez-vous vraiment vider le cache des modèles téléchargés ? Cette action est irréversible.")) {
+      return;
+    }
+    try {
+      await ipc.modelClearCache();
+      refresh(); // Rafraîchir la liste après nettoyage
+      alert("Cache vidé avec succès !");
+    } catch (error) {
+      console.error("Erreur nettoyage cache:", error);
+      alert("Erreur lors du nettoyage : " + error);
+    }
+  };
+
   useEffect(() => {
     refresh();
+    
+    // Écouter les événements Ollama
+    const unlistenPullProgress = listen<OllamaPullProgress>("ollama:pull:progress", (event) => {
+      const p = event.payload;
+      setPullProgress({
+        status: p.status ?? "",
+        completed: p.completed ?? 0,
+        total: p.total ?? 0,
+      });
+    });
+    const unlistenPullDone = listen("ollama:pull:done", () => {
+      setOllamaPulling(null);
+      setPullProgress(null);
+      refresh(); // Rafraîchir après succès
+    });
+    const unlistenPullError = listen("ollama:pull:error", () => {
+      setOllamaPulling(null);
+      setPullProgress(null);
+    });
+
+    return () => {
+      unlistenPullProgress.then(f => f());
+      unlistenPullDone.then(f => f());
+      unlistenPullError.then(f => f());
+    };
   }, []);
 
   const lower = filter.trim().toLowerCase();
@@ -48,7 +110,7 @@ export function CatalogView() {
       <header className="flex items-center gap-3 border-b border-border px-4 py-2 text-xs text-muted">
         <span className="font-semibold text-fg">Catalogue de modèles</span>
         <span>·</span>
-        <span>{filtered.length} / {models.length} modèles</span>
+        <span>{filtered.length} / {models.length} modèles (Ollama uniquement)</span>
         {hw && (
           <>
             <span>·</span>
@@ -59,8 +121,14 @@ export function CatalogView() {
           </>
         )}
         <button
+          onClick={handleClearCache}
+          className="rounded border border-red-500/40 px-2 py-1 text-xs text-red-300 hover:bg-red-500/10 mr-2"
+        >
+          Vider cache GGUF
+        </button>
+        <button
           onClick={refresh}
-          className="ml-auto rounded border border-border px-2 py-1 text-xs text-muted hover:bg-border/40"
+          className="rounded border border-border px-2 py-1 text-xs text-muted hover:bg-border/40"
         >
           Rafraîchir
         </button>
@@ -89,7 +157,7 @@ export function CatalogView() {
           </thead>
           <tbody>
             {filtered.map((m) => (
-              <Row key={m.id} m={m} hw={hw} onInstalled={refresh} />
+              <Row key={m.id} m={m} hw={hw} onInstalled={refresh} onOllamaPull={handleOllamaPull} ollamaPulling={ollamaPulling} pullProgress={pullProgress} isAnyPulling={ollamaPulling !== null} />
             ))}
           </tbody>
         </table>
@@ -98,7 +166,23 @@ export function CatalogView() {
   );
 }
 
-function Row({ m, hw, onInstalled }: { m: ModelInfo; hw: HardwareInfo | null; onInstalled: () => void }) {
+function Row({ 
+  m, 
+  hw, 
+  onInstalled, 
+  onOllamaPull, 
+  ollamaPulling,
+  pullProgress,
+  isAnyPulling,
+}: { 
+  m: ModelInfo; 
+  hw: HardwareInfo | null; 
+  onInstalled: () => void;
+  onOllamaPull: (ollamaTag: string) => void;
+  ollamaPulling: string | null;
+  pullProgress: OllamaPullProgress | null;
+  isAnyPulling: boolean;
+}) {
   const download = useDownloadsStore((s) => s.downloads[m.id]);
   const start = useDownloadsStore((s) => s.start);
   const cancel = useDownloadsStore((s) => s.cancel);
@@ -109,7 +193,15 @@ function Row({ m, hw, onInstalled }: { m: ModelInfo; hw: HardwareInfo | null; on
   const eligible = hw ? hw.totalRamGb >= requiredRelaxed : false;
 
   const isDownloading = !!download && !download.done && !download.error;
+  const isOllamaPulling = ollamaPulling === m.ollamaTag;
+  // Un pull Ollama est en cours sur une AUTRE ligne : on bloque les
+  // boutons de téléchargement pour éviter les états d'affichage incohérents.
+  const blockedByOtherPull = isAnyPulling && !isOllamaPulling;
   const pct = download && download.total > 0 ? Math.round((download.downloaded / download.total) * 100) : 0;
+  const ollamaPct =
+    pullProgress && pullProgress.total > 0
+      ? Math.round((pullProgress.completed / pullProgress.total) * 100)
+      : 0;
 
   const renderStatus = () => {
     if (m.installed) {
@@ -143,7 +235,8 @@ function Row({ m, hw, onInstalled }: { m: ModelInfo; hw: HardwareInfo | null; on
       return (
         <button
           onClick={() => start(m.id)}
-          className="rounded border border-border px-2 py-1 text-xs text-muted hover:bg-border/40"
+          disabled={blockedByOtherPull}
+          className="rounded border border-border px-2 py-1 text-xs text-muted hover:bg-border/40 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
         >
           Réessayer
         </button>
@@ -169,15 +262,41 @@ function Row({ m, hw, onInstalled }: { m: ModelInfo; hw: HardwareInfo | null; on
         </button>
       );
     }
+    if (isOllamaPulling) {
+      return (
+        <span className="flex items-center gap-1.5 rounded border border-blue-500/40 px-2 py-1 text-xs text-blue-300">
+          <Download size={12} className="animate-pulse" />
+          {ollamaPct > 0 ? `${ollamaPct}%` : "Pull..."}
+        </span>
+      );
+    }
     if (!eligible) {
       return <span className="text-muted">Bloqué</span>;
     }
+    
+    // Privilégier Ollama si un tag existe
+    if (m.ollamaTag) {
+      return (
+        <button
+          onClick={() => onOllamaPull(m.ollamaTag!)}
+          disabled={isOllamaPulling || blockedByOtherPull}
+          title={blockedByOtherPull ? "Un téléchargement Ollama est déjà en cours" : undefined}
+          className="flex items-center gap-1.5 rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-blue-600"
+        >
+          <Download size={12} />
+          {isOllamaPulling ? "Pull..." : "Pull Ollama"}
+        </button>
+      );
+    }
+    
     return (
       <button
         onClick={() => start(m.id)}
-        className="rounded bg-accent px-3 py-1 text-xs text-white hover:bg-accent/80"
+        disabled={blockedByOtherPull}
+        title={blockedByOtherPull ? "Un téléchargement Ollama est déjà en cours" : undefined}
+        className="rounded bg-accent px-3 py-1 text-xs text-white hover:bg-accent/80 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-accent"
       >
-        Télécharger
+        Télécharger GGUF
       </button>
     );
   };
@@ -228,6 +347,31 @@ function Row({ m, hw, onInstalled }: { m: ModelInfo; hw: HardwareInfo | null; on
               </span>
               <span className="w-24 text-right text-muted tabular-nums">
                 {formatBps(download?.bytesPerSecond ?? 0)}
+              </span>
+            </div>
+          </td>
+        </tr>
+      )}
+      {isOllamaPulling && (
+        <tr className="border-t border-border/20 bg-blue-500/5">
+          <td colSpan={9} className="px-4 py-2">
+            <div className="flex items-center gap-2 text-xs">
+              <div className="h-2 flex-1 overflow-hidden rounded bg-border/40">
+                <div
+                  className={`h-full bg-blue-500 transition-all ${ollamaPct === 0 ? "animate-pulse" : ""}`}
+                  style={{ width: ollamaPct > 0 ? `${ollamaPct}%` : "100%" }}
+                />
+              </div>
+              <span className="w-12 text-right tabular-nums text-fg">
+                {ollamaPct > 0 ? `${ollamaPct}%` : ""}
+              </span>
+              <span className="w-32 text-right text-muted tabular-nums">
+                {pullProgress && pullProgress.total > 0
+                  ? `${formatSize(pullProgress.completed)} / ${formatSize(pullProgress.total)}`
+                  : ""}
+              </span>
+              <span className="w-40 truncate text-right text-muted">
+                {pullProgress?.status ?? "Connexion à Ollama…"}
               </span>
             </div>
           </td>

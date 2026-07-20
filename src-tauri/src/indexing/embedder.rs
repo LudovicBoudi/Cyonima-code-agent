@@ -6,8 +6,7 @@
 use std::path::PathBuf;
 
 use candle_core::{DType, Device, Tensor};
-use candle_nn::VarBuilder;
-use candle_transformers::models::bert::{BertModel, Config, DTYPE};
+use candle_transformers::models::bert::BertModel;
 use tokenizers::Tokenizer;
 
 use super::EMBED_DIM;
@@ -31,74 +30,12 @@ pub enum EmbedError {
 }
 
 impl Embedder {
-    /// Charge l'embedder depuis le cache local. Télécharge si absent.
+    /// Charge l'embedder depuis le cache local. 
+    /// DÉSACTIVÉ : évite les téléchargements automatiques qui déclenchent Windows Defender.
     pub fn load() -> Result<Self, EmbedError> {
-        let cache_dir = embedder_cache_dir();
-        std::fs::create_dir_all(&cache_dir).map_err(|e| {
-            EmbedError::ModelUnavailable(format!("création cache: {e}"))
-        })?;
-
-        let device = Device::Cpu;
-
-        // Charger le tokenizer.
-        let tokenizer_path = cache_dir.join("tokenizer.json");
-        if !tokenizer_path.exists() {
-            download_file(
-                "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json",
-                &tokenizer_path,
-            )
-            .map_err(|e| EmbedError::ModelUnavailable(format!("download tokenizer: {e}")))?;
-        }
-        let tokenizer = Tokenizer::from_file(&tokenizer_path)
-            .map_err(|e| EmbedError::Tokenization(e.to_string()))?;
-
-        // Config du modèle all-MiniLM-L6-v2 (384 hidden, 6 layers, 12 heads).
-        let config = Config {
-            vocab_size: 30522,
-            hidden_size: 384,
-            num_hidden_layers: 6,
-            num_attention_heads: 12,
-            intermediate_size: 1536,
-            hidden_act: candle_transformers::models::bert::HiddenAct::Gelu,
-            hidden_dropout_prob: 0.0,
-            max_position_embeddings: 512,
-            type_vocab_size: 2,
-            initializer_range: 0.02,
-            layer_norm_eps: 1e-12,
-            pad_token_id: 0,
-            position_embedding_type: Default::default(),
-            use_cache: false,
-            classifier_dropout: None,
-            model_type: Some("bert".into()),
-        };
-
-        // Charger les poids.
-        let weights_path = cache_dir.join("model.safetensors");
-        if !weights_path.exists() {
-            download_file(
-                "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/model.safetensors",
-                &weights_path,
-            )
-            .map_err(|e| EmbedError::ModelUnavailable(format!("download weights: {e}")))?;
-        }
-
-        let vb = unsafe {
-            VarBuilder::from_mmaped_safetensors(
-                &[weights_path.to_str().unwrap_or_default()],
-                DTYPE,
-                &device,
-            )
-            .map_err(|e| EmbedError::ModelUnavailable(format!("chargement poids: {e}")))?
-        };
-
-        let model =
-            BertModel::load(vb, &config).map_err(|e| EmbedError::ModelUnavailable(e.to_string()))?;
-
-        Ok(Self {
-            model,
-            tokenizer,
-            device,
-        })
+        Err(EmbedError::ModelUnavailable(
+            "Embedder désactivé temporairement pour éviter les blocages Windows Defender. Les téléchargements automatiques seront réactivés plus tard.".to_string()
+        ))
     }
 
     /// Embed un texte unique. Retourne un vecteur de dimension EMBED_DIM.
@@ -208,6 +145,8 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 }
 
 /// Répertoire cache de l'embedder.
+/// Conservé pour la réactivation future de l'embedder local (cf `load`).
+#[allow(dead_code)]
 fn embedder_cache_dir() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -217,6 +156,8 @@ fn embedder_cache_dir() -> PathBuf {
 }
 
 /// Télécharge un fichier URL vers un chemin local (async).
+/// Conservé pour la réactivation future de l'embedder local (cf `load`).
+#[allow(dead_code)]
 async fn download_file_async(url: &str, dest: &PathBuf) -> Result<(), String> {
     let response = reqwest::get(url).await.map_err(|e| e.to_string())?;
     let bytes = response.bytes().await.map_err(|e| e.to_string())?;
@@ -225,6 +166,8 @@ async fn download_file_async(url: &str, dest: &PathBuf) -> Result<(), String> {
 }
 
 /// Télécharge un fichier URL vers un chemin local (bloquant, pour usage hors async).
+/// Conservé pour la réactivation future de l'embedder local (cf `load`).
+#[allow(dead_code)]
 fn download_file(url: &str, dest: &PathBuf) -> Result<(), String> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()

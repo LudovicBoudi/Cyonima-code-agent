@@ -18,6 +18,7 @@ import {
   onSessionToolCall,
   onSessionToolResult,
   onSessionThinking,
+  onSessionModelLoading,
   onDownloadProgress,
   onDownloadDone,
   onDownloadError,
@@ -32,51 +33,72 @@ export default function App() {
   const activeSessionId = useSessionsStore((s) => s.activeSessionId);
   const loaded = useSessionsStore((s) => s.loaded);
   const loadAll = useSessionsStore((s) => s.loadAll);
+  const loadInstalledOllamaModels = useSessionsStore((s) => s.loadInstalledOllamaModels);
 
   const appendToken = useSessionsStore((s) => s.appendToken);
   const appendThinking = useSessionsStore((s) => s.appendThinking);
-  const clearThinking = useSessionsStore((s) => s.clearThinking);
   const setStreaming = useSessionsStore((s) => s.setStreaming);
   const setError = useSessionsStore((s) => s.setError);
+  const setModelLoading = useSessionsStore((s) => s.setModelLoading);
+  const setModelLoadingProgress = useSessionsStore((s) => s.setModelLoadingProgress);
   const addToolCall = useSessionsStore((s) => s.addToolCall);
   const setToolResult = useSessionsStore((s) => s.setToolResult);
   const setProgress = useDownloadsStore((s) => s.setProgress);
   const markDownloadDone = useDownloadsStore((s) => s.markDone);
   const markDownloadError = useDownloadsStore((s) => s.markError);
 
-  // Au démarrage : recharge les sessions persistées en SQLite.
+  // Au démarrage : recharge les sessions persistées en SQLite + la liste des
+  // modèles Ollama installés (source du menu déroulant du chat).
   useEffect(() => {
     if (!loaded) {
       void loadAll();
+      void loadInstalledOllamaModels();
     }
-  }, [loaded, loadAll]);
+  }, [loaded, loadAll, loadInstalledOllamaModels]);
 
   useEffect(() => {
+    // StrictMode (dev) monte l'effet deux fois. Comme les listeners Tauri
+    // s'enregistrent en asynchrone, on utilise un flag `disposed` : tout
+    // listener résolu APRÈS le cleanup est immédiatement retiré, évitant les
+    // doublons d'events (tokens/thinking affichés en double).
+    let disposed = false;
     const unlistens: Array<() => void> = [];
+    const track = (u: () => void) => {
+      if (disposed) u();
+      else unlistens.push(u);
+    };
     (async () => {
-      unlistens.push(await onSessionToken((e) => appendToken(e.sessionId, e.token)));
-      unlistens.push(await onSessionThinking((e) => appendThinking(e.sessionId, e.token)));
-      unlistens.push(
+      track(await onSessionToken((e) => appendToken(e.sessionId, e.token)));
+      track(await onSessionThinking((e) => appendThinking(e.sessionId, e.token)));
+      track(
+        await onSessionModelLoading((e) => {
+          setModelLoading(e.sessionId, e.loading);
+          setModelLoadingProgress(e.sessionId, e.progress);
+        })
+      );
+      track(
         await onSessionToolCall((e) =>
           addToolCall(e.sessionId, { callId: e.callId, tool: e.tool, arguments: e.arguments }),
         ),
       );
-      unlistens.push(
+      track(
         await onSessionToolResult((e) => setToolResult(e.sessionId, e.callId, e.output, e.isError)),
       );
-      unlistens.push(
+      track(
         await onSessionDone((e) => {
-          clearThinking(e.sessionId);
+          // On NE vide PAS le thinking ici : il reste affiché sous le dernier
+          // message assistant (bloc "Raisonnement du modèle"). Il est nettoyé
+          // au prochain envoi de message (cf store.send).
           setStreaming(e.sessionId, false);
         }),
       );
-      unlistens.push(
+      track(
         await onSessionError((e) => {
           setError(e.sessionId, e.error);
           setStreaming(e.sessionId, false);
         }),
       );
-      unlistens.push(
+      track(
         await onDownloadProgress((e) =>
           setProgress({
             modelId: e.modelId,
@@ -86,26 +108,30 @@ export default function App() {
           }),
         ),
       );
-      unlistens.push(
+      track(
         await onDownloadDone((e) => {
           markDownloadDone(e.modelId);
         }),
       );
-      unlistens.push(
+      track(
         await onDownloadError((e) => {
           markDownloadError(e.modelId, e.error);
         }),
       );
     })();
-    return () => unlistens.forEach((u) => u());
+    return () => {
+      disposed = true;
+      unlistens.forEach((u) => u());
+    };
   }, [
     appendToken,
     appendThinking,
-    clearThinking,
     setStreaming,
     setError,
     addToolCall,
     setToolResult,
+    setModelLoading,
+    setModelLoadingProgress,
     setProgress,
     markDownloadDone,
     markDownloadError,
