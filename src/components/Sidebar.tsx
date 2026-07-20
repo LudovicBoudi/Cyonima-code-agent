@@ -1,5 +1,5 @@
 import { useSessionsStore } from "../store/sessions";
-import { Plus, Terminal, BookOpen, X, GitFork, Upload, Key } from "lucide-react";
+import { Plus, Terminal, BookOpen, X, GitFork, Upload, Key, Server } from "lucide-react";
 
 const PROVIDER_LABEL: Record<string, string> = {
   llama_cpp: "llama.cpp",
@@ -10,7 +10,7 @@ const PROVIDER_LABEL: Record<string, string> = {
   openai_compat: "OpenAI-compat",
 };
 
-type View = "sessions" | "catalog" | "import" | "settings";
+type View = "sessions" | "catalog" | "import" | "settings" | "ollama";
 
 export function Sidebar({
   view,
@@ -45,6 +45,14 @@ export function Sidebar({
           }`}
         >
           <BookOpen size={14} /> Catalogue de modèles
+        </button>
+        <button
+          onClick={() => onView("ollama")}
+          className={`mb-1 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs ${
+            view === "ollama" ? "bg-accent/20 text-fg" : "text-muted hover:bg-border/40"
+          }`}
+        >
+          <Server size={14} /> Ollama
         </button>
         <button
           onClick={() => onView("import")}

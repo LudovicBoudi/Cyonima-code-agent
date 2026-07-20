@@ -3,6 +3,7 @@ import { SessionsView } from "./pages/SessionsView";
 import { CatalogView } from "./pages/CatalogView";
 import { ImportModelView } from "./pages/ImportModelView";
 import { SettingsView } from "./pages/SettingsView";
+import { OllamaView } from "./pages/OllamaView";
 import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { PermissionDialog } from "./components/PermissionDialog";
@@ -19,7 +20,7 @@ import {
   onDownloadError,
 } from "./lib/ipc";
 
-type View = "sessions" | "catalog" | "import" | "settings";
+type View = "sessions" | "catalog" | "import" | "settings" | "ollama";
 
 export default function App() {
   const [view, setView] = useState<View>("sessions");
@@ -111,6 +112,7 @@ export default function App() {
         <main className="flex flex-1 flex-col overflow-hidden">
           {view === "sessions" && <SessionsView />}
           {view === "catalog" && <CatalogView />}
+          {view === "ollama" && <OllamaView />}
           {view === "import" && <ImportModelView />}
           {view === "settings" && <SettingsView />}
         </main>

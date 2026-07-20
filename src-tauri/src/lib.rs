@@ -66,6 +66,8 @@ pub fn run() {
             ipc::provider_has_api_key,
             ipc::provider_delete_api_key,
             ipc::provider_list_configured,
+            ipc::ollama_list_models,
+            ipc::ollama_pull_model,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de l'application Tauri");

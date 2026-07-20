@@ -127,10 +127,11 @@ Les jalons sont prévus pour être livrés dans l'ordre. Chacun a des critères 
 - Settings UI pour provider + clé (keyring OS)  ✅
 - **DoD** : chat avec GPT-4o, Claude 3.5 et Gemini Pro via clés utilisateur.  ✅
 
-## J7 — Ollama provider
-- Détection auto (`http://localhost:11434`)
-- Pull/liste des modèles déjà installés côté Ollama
-- **DoD** : un modèle Ollama local est utilisable sans redownload.
+## J7 — Ollama provider  ✅
+- Détection auto (`http://localhost:11434`)  ✅ (déjà dans OllamaProvider)
+- IPC `ollama_list_models` (`GET /api/tags`) + `ollama_pull_model` (`POST /api/pull` streaming)  ✅
+- UI OllamaView : modèles installés, pull populaire (grille), pull custom, progression temps réel  ✅
+- **DoD** : un modèle Ollama local est utilisable sans redownload.  ✅
 
 ## J8 — Recherche sémantique + indexing
 - Intégration de l'embedder local embarqué

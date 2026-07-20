@@ -67,6 +67,20 @@ export interface HardwareInfo {
   vramGb: number;
 }
 
+export interface OllamaModelInfo {
+  name: string;
+  size: number;
+  digest: string;
+  modifiedAt: string;
+}
+
+export interface OllamaPullProgress {
+  status: string;
+  completed?: boolean;
+  total?: number;
+  digest?: string;
+}
+
 // ===== Commands =====
 
 export const ipc = {
@@ -102,6 +116,11 @@ export const ipc = {
     invoke<void>("provider_delete_api_key", p),
   providerListConfigured: () =>
     invoke<string[]>("provider_list_configured"),
+
+  ollamaListModels: () =>
+    invoke<OllamaModelInfo[]>("ollama_list_models"),
+  ollamaPullModel: (p: { model: string }) =>
+    invoke<void>("ollama_pull_model", p),
 
   hardwareGet: () => invoke<HardwareInfo>("hardware_get"),
   hardwareCanRunModel: (ramMinGb: number) =>
@@ -160,4 +179,16 @@ export interface PermissionRequestEvent {
 
 export function onPermissionRequest(cb: (e: PermissionRequestEvent) => void): Promise<UnlistenFn> {
   return listen("permission:request", (ev) => cb(ev.payload as never));
+}
+
+export function onOllamaPullProgress(cb: (e: OllamaPullProgress & { model: string }) => void): Promise<UnlistenFn> {
+  return listen("ollama:pull:progress", (ev) => cb(ev.payload as never));
+}
+
+export function onOllamaPullDone(cb: (e: { model: string }) => void): Promise<UnlistenFn> {
+  return listen("ollama:pull:done", (ev) => cb(ev.payload as never));
+}
+
+export function onOllamaPullError(cb: (e: { model: string; error: string }) => void): Promise<UnlistenFn> {
+  return listen("ollama:pull:error", (ev) => cb(ev.payload as never));
 }
