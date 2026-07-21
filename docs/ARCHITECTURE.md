@@ -4,12 +4,15 @@
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│  Frontend React (UI)                                       │
+│  Frontend React (UI, thème violet unique)                  │
 │  ├─ Sessions        (onglets multi-agents parallèles)      │
-│  │   └─ menu déroulant modèle (modèles Ollama installés)   │
+│  │   ├─ Bloc 1 (75%) : chat + raisonnement + réponses      │
+│  │   │    └─ chatbox : modèle · raisonnement · contexte    │
+│  │   └─ Bloc 2 (25%) : fichiers git du workspace           │
+│  ├─ Catalogue        (installés + disponibles, tri RAM)    │
 │  ├─ Ollama           (modèles installés + pull)            │
-│  ├─ Config           (endpoint Ollama, permissions, thème) │
-│  └─ Status bar       (session, modèle, tokens)             │
+│  ├─ Config           (endpoint Ollama, permissions)        │
+│  └─ Status bar       (version, session, modèle)            │
 └───────────────────────┬────────────────────────────────────┘
                         │ Tauri IPC (commands + events)
 ┌───────────────────────┴────────────────────────────────────┐
@@ -56,13 +59,25 @@ pub enum ChatEvent {
 }
 ```
 
+Le `ChatRequest` transporte aussi un champ `reasoning: Option<String>`
+(`"auto"`/`"off"`/`"low"`/`"medium"`/`"high"`) réglable depuis la chatbox.
+
 ### Détection de capacités Ollama
 
 Le `OllamaProvider` interroge `POST /api/show` avant chaque conversation pour
 lire les `capabilities` du modèle. Il n'envoie `tools` que si le modèle les
-supporte (évite le HTTP 400 « does not support tools » de DeepSeek-R1) et n'active
-`think: true` que pour les modèles « thinking ». Un parseur de secours extrait
-aussi le raisonnement inline `<think>…</think>` du champ `content`.
+supporte (évite le HTTP 400 « does not support tools » de DeepSeek-R1). Un parseur
+de secours extrait aussi le raisonnement inline `<think>…</think>` du champ
+`content`.
+
+### Intensité de raisonnement
+
+Pour les modèles « thinking », le champ `think` d'Ollama est dérivé du
+`reasoning` demandé : `auto` → `true`, `off` → `false`, `low`/`medium`/`high` →
+niveau correspondant. Le champ n'est envoyé que si le modèle déclare la capacité
+`thinking` (sinon Ollama renverrait une erreur). La taille de contexte du modèle
+est lue via `POST /api/show` (`ollama_model_info`) pour alimenter l'indicateur
+d'usage de contexte de la chatbox.
 
 ## Sessions
 
@@ -77,6 +92,21 @@ aussi le raisonnement inline `<think>…</think>` du champ `content`.
   transmis à chaque `session_send` et stocké dans `SessionInner.current_model`.
 - Le message `system` AGENTS.md est toujours injecté dans le contexte du LLM mais
   **masqué de l'affichage** (remplacé par un court message de bienvenue).
+- Le modèle courant et l'intensité de raisonnement (`current_model`,
+  `current_reasoning` dans `SessionInner`) sont modifiables en cours de session
+  et transmis à chaque `session_send`.
+
+### Interface de session (2 colonnes)
+
+- **Bloc 1 (75%)** — conversation : réponses, bloc « Raisonnement du modèle »
+  repliable, tool calls, puis la **chatbox**. La chatbox porte une barre de
+  contrôles : sélecteur de modèle, menu d'intensité de raisonnement, et un
+  **indicateur d'usage de contexte** (`tokensIn + tokensOut` du dernier tour vs
+  taille de contexte du modèle). Boutons Play/Stop pour envoyer/arrêter.
+- **Bloc 2 (25%)** — **fichiers git du workspace** : liste des fichiers ajoutés /
+  modifiés / supprimés / renommés via `workspace_git_status` (`git status
+  --porcelain`). Rafraîchi à la fin d'une génération et par sondage pendant
+  qu'un agent travaille. On suppose que les workspaces sont des dépôts git.
 
 ## Modèles (via Ollama)
 
@@ -114,12 +144,14 @@ Mécanisme : chaque tool call est enveloppé. Le gateway check `config.permissio
 
 ### Commands (frontend → backend)
 - `session_create { workspace, model_id, provider_id }` — `model_id` peut être vide (choisi ensuite dans le chat), `provider_id` = `ollama`
-- `session_send { session_id, message, model? }` — `model` = modèle sélectionné dans le menu déroulant
+- `session_send { session_id, message, model?, reasoning? }` — `model` et `reasoning` = sélections de la chatbox
 - `session_cancel { session_id }`
 - `session_fork { session_id }`
 - `session_history { session_id }` / `session_delete { session_id }` / `session_list {}`
 - `ollama_list_models {}` (`GET /api/tags`) — alimente le menu déroulant du chat
 - `ollama_pull_model { model }` (`POST /api/pull` streaming)
+- `ollama_model_info { model }` (`POST /api/show`) → `{ contextLength }` pour l'indicateur de contexte
+- `workspace_git_status { workspace }` → `{ isRepo, changes[] }` (fichiers modifiés, `git status --porcelain`)
 - `hardware_get {}` → snapshot RAM/CPU/OS/arch/VRAM
 - `hardware_can_run_model { ram_min_gb }` → bool (adéquation modèle / machine)
 - `config_get {}` / `config_get_workspace { workspace }` / `config_set_*`

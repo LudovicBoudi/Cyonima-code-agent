@@ -56,6 +56,19 @@ npm run tauri build
 
 ---
 
+## Interface
+
+Thème **violet** unique (sombre). La vue session est organisée en **deux colonnes** :
+
+- **Gauche (75%)** — la conversation : raisonnement du modèle (bloc repliable), réponses, appels d'outils, puis la **chatbox**. La chatbox propose :
+  - le **sélecteur de modèle** (modèles Ollama installés) ;
+  - un menu d'**intensité de raisonnement** (Auto / Désactivé / Faible / Moyen / Élevé) pour les modèles « thinking » ;
+  - un **indicateur d'usage de contexte** (tokens du dernier tour vs taille de contexte du modèle) ;
+  - les boutons **Play / Stop** pour envoyer ou interrompre.
+- **Droite (25%)** — les **fichiers modifiés** du workspace (ajoutés / modifiés / supprimés / renommés), via `git status`. Les répertoires de travail sont supposés être des dépôts git.
+
+---
+
 ## Gérer ses modèles
 
 Tous les modèles passent par Ollama :
