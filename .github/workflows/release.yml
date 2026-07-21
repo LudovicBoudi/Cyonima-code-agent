@@ -79,12 +79,12 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
-          # Crée un brouillon de Release nommé d'après le tag (ex: "Cyonima IA v1.0.0").
-          # On publie manuellement après relecture des installateurs + checksums.
+          # Publie directement une Release officielle nommée d'après le tag
+          # (ex: "Cyonima IA v1.0.0"), avec les installateurs en assets.
           tagName: ${{ github.ref_name }}
           releaseName: "Cyonima IA ${{ github.ref_name }}"
           releaseBody: "Voir le CHANGELOG.md pour les nouveautés. Installateurs et SHA256SUMS.txt ci-dessous."
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
 
