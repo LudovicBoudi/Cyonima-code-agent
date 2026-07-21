@@ -1,6 +1,5 @@
 import { useSessionsStore } from "../store/sessions";
 import { Plus, Terminal, BookOpen, X, GitFork, Upload, Key, Server, Settings, Search, MessageSquare } from "lucide-react";
-import { ThemeToggle } from "./ThemeToggle";
 
 const PROVIDER_LABEL: Record<string, string> = {
   llama_cpp: "llama.cpp",
@@ -119,9 +118,6 @@ export function Sidebar({
           </button>
         </>
       )}
-      <div className="mt-auto border-t border-border px-3 py-2">
-        <ThemeToggle />
-      </div>
     </aside>
   );
 }

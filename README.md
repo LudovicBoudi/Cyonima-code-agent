@@ -2,9 +2,8 @@
 
 > Agent IA de code **100% local, gratuit et open source** pour Windows, macOS et Linux.
 > Multi-session, propulsé par [Ollama](https://ollama.com). Inspiré d'[Opencode](https://opencode.ai/go?ref=ZB69DAJS6H) et de [Kiro IDE](https://kiro.dev).
-> **Cyonima** est une marque. Le produit est **Cyonima-ia-code-agent**.
 
-## Pourquoi Cyonima IA ?
+## Pourquoi ?
 
 La majorité des outils d'IA « locaux » existants limitent leur usage pour forcer un abonnement.
 Cyonima-ia-code-agent est l'inverse :
@@ -94,13 +93,13 @@ Le menu déroulant du chat liste automatiquement les modèles présents dans Oll
 | **Généraliste équilibré** | `gemma3:12b` ou `qwen2.5:14b` | Bon compromis qualité / vitesse. |
 | **Multilingue** | `qwen2.5:14b` | Fort en anglais, chinois et langues secondaires. |
 
-> Les modèles « thinking » (DeepSeek-R1, Qwen3…) affichent leur raisonnement dans un bloc « Raisonnement du modèle » repliable, séparé de la réponse finale. Cyonima active automatiquement le mode thinking uniquement pour les modèles qui le supportent.
+> Les modèles « thinking » (DeepSeek-R1, Qwen3…) affichent leur raisonnement dans un bloc « Raisonnement du modèle » repliable, séparé de la réponse finale. L'application active automatiquement le mode thinking uniquement pour les modèles qui le supportent.
 
 ---
 
 ## Garde-fou hardware
 
-Avant de suggérer / lancer un modèle, Cyonima vérifie :
+Avant de suggérer / lancer un modèle, l'application vérifie :
 
 1. **RAM totale** vs RAM minimale recommandée du modèle (marge de 1 Go pour l'OS)
 2. **VRAM GPU** (DXGI sur Windows, sysfs sur Linux, `system_profiler` sur macOS)
@@ -120,6 +119,7 @@ Le garde-fou est exposé en IPC : `hardware_get()` et `hardware_can_run_model(ra
 
 - [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) — schémas de l'application et des modules Rust
 - [`ROADMAP.md`](docs/ROADMAP.md) — jalons de développement
+- [`models-guide.md`](docs/models-guide.md) — quel modèle choisir selon la tâche (comparatif + repères)
 - [`AGENTS.md`](AGENTS.md) — instructions par défaut de l'agent Cyonima sur ce repo
 - [`docs/models-catalog.toml`](docs/models-catalog.toml) — catalogue de tags Ollama suggérés
 

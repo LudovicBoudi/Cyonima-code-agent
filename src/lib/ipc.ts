@@ -83,6 +83,13 @@ export interface OllamaPullProgress {
   digest?: string;
 }
 
+export interface OllamaModelDetails {
+  contextLength: number | null;
+}
+
+/// Niveaux d'intensité de raisonnement exposés dans l'UI.
+export type ReasoningLevel = "auto" | "off" | "low" | "medium" | "high";
+
 export interface GlobalConfig {
   storage: { modelsDir: string };
   permissions: { overrides: Record<string, string> };
@@ -108,12 +115,24 @@ export interface SearchResult {
   score: number;
 }
 
+export type GitFileStatus = "added" | "modified" | "deleted" | "renamed" | "untracked";
+
+export interface GitFileChange {
+  path: string;
+  status: GitFileStatus;
+}
+
+export interface GitStatus {
+  isRepo: boolean;
+  changes: GitFileChange[];
+}
+
 // ===== Commands =====
 
 export const ipc = {
   sessionCreate: (p: { workspace: string; modelId: string; providerId: string }) =>
     invoke<SessionInfo>("session_create", p),
-  sessionSend: (p: { sessionId: string; message: string; model?: string }) =>
+  sessionSend: (p: { sessionId: string; message: string; model?: string; reasoning?: string }) =>
     invoke<void>("session_send", p),
   sessionCancel: (p: { sessionId: string }) => invoke<void>("session_cancel", p),
   sessionFork: (p: { sessionId: string }) => invoke<SessionInfo | null>("session_fork", p),
@@ -149,6 +168,8 @@ export const ipc = {
     invoke<OllamaModelInfo[]>("ollama_list_models"),
   ollamaPullModel: (p: { model: string }) =>
     invoke<void>("ollama_pull_model", p),
+  ollamaModelInfo: (p: { model: string }) =>
+    invoke<OllamaModelDetails>("ollama_model_info", p),
 
   configGet: () => invoke<GlobalConfig>("config_get"),
   configGetWorkspace: (p: { workspace: string }) =>
@@ -173,6 +194,9 @@ export const ipc = {
   indexSearch: (p: { workspace: string; query: string; limit?: number }) =>
     invoke<SearchResult[]>("index_search", p),
   indexCount: () => invoke<number>("index_count"),
+
+  workspaceGitStatus: (p: { workspace: string }) =>
+    invoke<GitStatus>("workspace_git_status", p),
 };
 
 // ===== Events helpers =====

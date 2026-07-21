@@ -1,9 +1,7 @@
-# AGENTS.md — Instructions par défaut pour les agents Cyonima IA
+# AGENTS.md — Instructions par défaut pour les agents
 
 Ce fichier est lu par Cyonima-ia-code-agent quand il travaille dans ce dépôt et injecté dans le system prompt.
 Vous pouvez créer un `AGENTS.md` à la racine de n'importe quel projet pour le personnaliser.
-
-> **Cyonima** est une marque. Le produit est **Cyonima-ia-code-agent**.
 
 ## Style de code
 

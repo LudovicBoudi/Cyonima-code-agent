@@ -28,11 +28,11 @@ struct OllamaChatRequest {
     model: String,
     messages: Vec<OllamaMessage>,
     stream: bool,
-    /// Active la séparation du raisonnement dans le champ `thinking`.
-    /// Uniquement envoyé pour les modèles qui déclarent la capacité `thinking`
-    /// (sinon Ollama renvoie une erreur "does not support thinking").
+    /// Active/règle le raisonnement. Accepte un booléen (`true`/`false`) ou un
+    /// niveau (`"low"`/`"medium"`/`"high"`). Uniquement envoyé pour les modèles
+    /// qui déclarent la capacité `thinking` (sinon Ollama renvoie une erreur).
     #[serde(skip_serializing_if = "Option::is_none")]
-    think: Option<bool>,
+    think: Option<serde_json::Value>,
     options: OllamaOptions,
     /// Outils activés (format OpenAI-compatible function calling).
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
@@ -290,11 +290,26 @@ impl Provider for OllamaProvider {
             })
             .collect();
 
+        // Traduit l'intensité de raisonnement demandée en valeur `think`.
+        // Seulement si le modèle supporte le thinking.
+        let think = if caps.thinking {
+            match req.reasoning.as_deref() {
+                Some("off") => Some(serde_json::Value::Bool(false)),
+                Some(level @ ("low" | "medium" | "high")) => {
+                    Some(serde_json::Value::String(level.to_string()))
+                }
+                // "auto", None, ou valeur inconnue : thinking activé par défaut.
+                _ => Some(serde_json::Value::Bool(true)),
+            }
+        } else {
+            None
+        };
+
         let body = OllamaChatRequest {
             model: req.model.clone(),
             messages,
             stream: true,
-            think: if caps.thinking { Some(true) } else { None },
+            think,
             options: OllamaOptions {
                 temperature: req.temperature,
                 num_predict: req.max_tokens,

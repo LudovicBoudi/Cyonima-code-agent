@@ -219,7 +219,7 @@ mod tests {
                 "Gemma 4 devrait être Apache-2.0, trouvé: {}",
                 m.license
             );
-            assert!(m.ollama_tag.is_some(), "Gemma 4 doit avoir un tag Ollama");
+            assert!(!m.ollama_tag.is_empty(), "Gemma 4 doit avoir un tag Ollama");
         }
     }
 

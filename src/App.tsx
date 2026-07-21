@@ -38,6 +38,7 @@ export default function App() {
   const appendToken = useSessionsStore((s) => s.appendToken);
   const appendThinking = useSessionsStore((s) => s.appendThinking);
   const setStreaming = useSessionsStore((s) => s.setStreaming);
+  const setUsage = useSessionsStore((s) => s.setUsage);
   const setError = useSessionsStore((s) => s.setError);
   const setModelLoading = useSessionsStore((s) => s.setModelLoading);
   const setModelLoadingProgress = useSessionsStore((s) => s.setModelLoadingProgress);
@@ -90,6 +91,7 @@ export default function App() {
           // message assistant (bloc "Raisonnement du modèle"). Il est nettoyé
           // au prochain envoi de message (cf store.send).
           setStreaming(e.sessionId, false);
+          if (e.usage) setUsage(e.sessionId, e.usage);
         }),
       );
       track(
@@ -127,6 +129,7 @@ export default function App() {
     appendToken,
     appendThinking,
     setStreaming,
+    setUsage,
     setError,
     addToolCall,
     setToolResult,

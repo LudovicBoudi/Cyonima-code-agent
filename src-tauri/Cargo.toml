@@ -1,6 +1,6 @@
 [package]
 name = "cyonima-ia-code-agent"
-version = "0.1.0"
+version = "1.0.0"
 description = "Agent IA de code 100% local, gratuit et open source."
 authors = ["Cyonima"]
 license = "MIT"

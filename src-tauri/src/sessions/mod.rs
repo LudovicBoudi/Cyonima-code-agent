@@ -79,6 +79,8 @@ pub struct SessionInner {
     /// Modèle courant, sélectionné via le menu déroulant du chat. Peut être
     /// vide à la création : l'UI le renseigne avant le premier envoi.
     pub current_model: Mutex<String>,
+    /// Intensité de raisonnement courante ("auto"/"off"/"low"/"medium"/"high").
+    pub current_reasoning: Mutex<String>,
     /// Permet à `session_cancel` d'interrompre le stream courant.
     pub cancel: CancellationToken,
     /// `true` si un stream est en cours — protège contre les envois concurrents.
@@ -206,6 +208,7 @@ impl SessionManager {
                 tools: ToolRegistry::built_in(),
                 messages: Mutex::new(messages),
                 current_model: Mutex::new(info.model_id.clone()),
+                current_reasoning: Mutex::new("auto".to_string()),
                 cancel: CancellationToken::new(),
                 busy: Mutex::new(false),
                 persistence: self.persistence.clone(),
@@ -259,6 +262,7 @@ impl SessionManager {
             tools: ToolRegistry::built_in(),
             messages: Mutex::new(initial_messages),
             current_model: Mutex::new(info.model_id.clone()),
+            current_reasoning: Mutex::new("auto".to_string()),
             cancel: CancellationToken::new(),
             busy: Mutex::new(false),
             persistence: self.persistence.clone(),
@@ -320,12 +324,14 @@ impl SessionManager {
         }
 
         let current_model = { src.current_model.lock().await.clone() };
+        let current_reasoning = { src.current_reasoning.lock().await.clone() };
         let inner = Arc::new(SessionInner {
             info: forked.clone(),
             provider,
             tools,
             messages: Mutex::new(messages),
             current_model: Mutex::new(current_model),
+            current_reasoning: Mutex::new(current_reasoning),
             cancel: CancellationToken::new(),
             busy: Mutex::new(false),
             persistence: src.persistence.clone(),
@@ -346,6 +352,7 @@ impl SessionManager {
         session_id: String,
         message: String,
         model: Option<String>,
+        reasoning: Option<String>,
     ) -> Result<(), String> {
         tracing::info!("=== DEBUT session_send pour session {} ===", session_id);
         tracing::info!("Message reçu: '{}'", message);
@@ -360,6 +367,12 @@ impl SessionManager {
         if let Some(m) = model {
             if !m.trim().is_empty() {
                 *session.current_model.lock().await = m;
+            }
+        }
+        // Met à jour l'intensité de raisonnement si fournie.
+        if let Some(r) = reasoning {
+            if !r.trim().is_empty() {
+                *session.current_reasoning.lock().await = r;
             }
         }
 
@@ -426,6 +439,7 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
     let session_id = session.info.id.clone();
     let specs = session.tools.specs();
     let model = { session.current_model.lock().await.clone() };
+    let reasoning = { session.current_reasoning.lock().await.clone() };
 
     tracing::info!("=== DEBUT agent_loop pour session {} ===", session_id);
     tracing::info!("Provider: {:?}, Model: {}", session.info.provider_id, model);
@@ -463,6 +477,7 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
             messages,
             model: model.clone(),
             tools: specs.clone(),
+            reasoning: Some(reasoning.clone()),
             ..Default::default()
         };
 

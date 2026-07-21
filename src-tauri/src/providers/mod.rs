@@ -65,6 +65,9 @@ pub struct ChatRequest {
     /// Identifiant du modèle côté provider (ex: "llama3.2" pour Ollama,
     /// chemin GGUF pour llama_cpp). Renseigné par le session manager.
     pub model: String,
+    /// Intensité de raisonnement demandée (pour les modèles « thinking ») :
+    /// "auto" | "off" | "low" | "medium" | "high". `None` = auto.
+    pub reasoning: Option<String>,
 }
 
 impl Default for ChatRequest {
@@ -75,6 +78,7 @@ impl Default for ChatRequest {
             max_tokens: Some(2048),
             tools: Vec::new(),
             model: String::new(),
+            reasoning: None,
         }
     }
 }

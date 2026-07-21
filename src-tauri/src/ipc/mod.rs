@@ -73,10 +73,18 @@ pub async fn session_send(
     session_id: String,
     message: String,
     model: Option<String>,
+    reasoning: Option<String>,
 ) -> Result<(), String> {
     state
         .sessions
-        .send(app, Arc::clone(&state.gateway), session_id, message, model)
+        .send(
+            app,
+            Arc::clone(&state.gateway),
+            session_id,
+            message,
+            model,
+            reasoning,
+        )
         .await
 }
 
@@ -490,6 +498,140 @@ pub async fn ollama_pull_model(
     });
 
     Ok(())
+}
+
+/// Infos d'un modèle Ollama utiles à l'UI (taille de contexte).
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OllamaModelDetails {
+    /// Taille max de contexte déclarée par le modèle (tokens), si connue.
+    pub context_length: Option<u64>,
+}
+
+/// Récupère les détails d'un modèle via `POST /api/show`. Extrait la taille
+/// de contexte depuis `model_info` (clé `<arch>.context_length`).
+#[tauri::command]
+pub async fn ollama_model_info(
+    state: State<'_, AppState>,
+    model: String,
+) -> Result<OllamaModelDetails, String> {
+    let endpoint = state
+        .config
+        .get()
+        .await
+        .provider
+        .ollama_endpoint
+        .unwrap_or_else(|| DEFAULT_OLLAMA_ENDPOINT.to_string());
+    let url = format!("{}/api/show", endpoint.trim_end_matches('/'));
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
+        .post(&url)
+        .json(&serde_json::json!({ "model": model }))
+        .send()
+        .await
+        .map_err(|e| format!("Ollama injoignable: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("Ollama a répondu {}", resp.status()));
+    }
+
+    let json: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("réponse Ollama invalide: {e}"))?;
+
+    // `model_info` contient une clé "<arch>.context_length" (ex:
+    // "qwen2.context_length"). On prend la première clé qui se termine ainsi.
+    let context_length = json
+        .get("model_info")
+        .and_then(|mi| mi.as_object())
+        .and_then(|obj| {
+            obj.iter()
+                .find(|(k, _)| k.ends_with(".context_length"))
+                .and_then(|(_, v)| v.as_u64())
+        });
+
+    Ok(OllamaModelDetails { context_length })
+}
+
+// ===== Git — statut du workspace =====
+
+/// Un fichier modifié dans le workspace, tel que rapporté par git.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitFileChange {
+    pub path: String,
+    /// "added" | "modified" | "deleted" | "renamed" | "untracked"
+    pub status: String,
+}
+
+/// Statut git du workspace.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitStatus {
+    /// `false` si le répertoire n'est pas un dépôt git.
+    pub is_repo: bool,
+    pub changes: Vec<GitFileChange>,
+}
+
+/// Renvoie l'état git du workspace (fichiers ajoutés / modifiés / supprimés /
+/// renommés / non suivis) via `git status --porcelain`. Lecture seule.
+#[tauri::command]
+pub async fn workspace_git_status(workspace: String) -> Result<GitStatus, String> {
+    let output = tokio::process::Command::new("git")
+        // core.quotepath=false : ne pas échapper les caractères non-ASCII des chemins.
+        .args(["-c", "core.quotepath=false", "status", "--porcelain"])
+        .current_dir(&workspace)
+        .output()
+        .await
+        .map_err(|e| format!("git introuvable ou non exécutable: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("not a git repository") {
+            return Ok(GitStatus {
+                is_repo: false,
+                changes: Vec::new(),
+            });
+        }
+        return Err(format!("git a échoué: {}", stderr.trim()));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut changes = Vec::new();
+    for line in stdout.lines() {
+        if line.len() < 3 {
+            continue;
+        }
+        let bytes = line.as_bytes();
+        let x = bytes[0] as char;
+        let y = bytes[1] as char;
+        let rest = line[3..].trim();
+        let (status, path) = if x == '?' {
+            ("untracked", rest.to_string())
+        } else if x == 'R' || y == 'R' {
+            // Format rename : "ancien -> nouveau". On garde le nouveau chemin.
+            let new_path = rest.split(" -> ").last().unwrap_or(rest).to_string();
+            ("renamed", new_path)
+        } else if x == 'D' || y == 'D' {
+            ("deleted", rest.to_string())
+        } else if x == 'A' || y == 'A' {
+            ("added", rest.to_string())
+        } else {
+            ("modified", rest.to_string())
+        };
+        changes.push(GitFileChange {
+            path,
+            status: status.to_string(),
+        });
+    }
+    Ok(GitStatus {
+        is_repo: true,
+        changes,
+    })
 }
 
 // ===== Config par projet =====

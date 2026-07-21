@@ -69,6 +69,7 @@ pub fn run() {
             ipc::provider_list_configured,
             ipc::ollama_list_models,
             ipc::ollama_pull_model,
+            ipc::ollama_model_info,
             ipc::config_get,
             ipc::config_get_workspace,
             ipc::config_set_default_provider,
@@ -79,6 +80,7 @@ pub fn run() {
             ipc::index_build,
             ipc::index_search,
             ipc::index_count,
+            ipc::workspace_git_status,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de l'application Tauri");

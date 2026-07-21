@@ -30,6 +30,12 @@ interface SessionsState {
   modelLoadingProgress: Record<string, number>;
   /// Modèle Ollama sélectionné par session (menu déroulant du chat).
   selectedModels: Record<string, string>;
+  /// Intensité de raisonnement par session ("auto"/"off"/"low"/"medium"/"high").
+  reasoningLevels: Record<string, string>;
+  /// Dernier usage de tokens rapporté par le backend (par session).
+  lastUsage: Record<string, { tokensIn: number; tokensOut: number }>;
+  /// Taille de contexte (tokens) connue par nom de modèle Ollama.
+  modelContextLengths: Record<string, number | null>;
   /// Liste des modèles installés dans Ollama (source du menu déroulant).
   installedOllamaModels: OllamaModelInfo[];
 
@@ -48,6 +54,12 @@ interface SessionsState {
   loadInstalledOllamaModels: () => Promise<void>;
   /// Sélectionne le modèle courant d'une session.
   setSelectedModel: (sessionId: string, model: string) => void;
+  /// Règle l'intensité de raisonnement d'une session.
+  setReasoning: (sessionId: string, level: string) => void;
+  /// Enregistre l'usage de tokens (depuis session:done).
+  setUsage: (sessionId: string, usage: { tokensIn: number; tokensOut: number }) => void;
+  /// Charge la taille de contexte d'un modèle Ollama (mis en cache).
+  loadModelContext: (model: string) => Promise<void>;
 
   setActive: (id: string | null) => void;
   deleteSession: (sessionId: string) => Promise<void>;
@@ -82,6 +94,9 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   modelLoading: {},
   modelLoadingProgress: {},
   selectedModels: {},
+  reasoningLevels: {},
+  lastUsage: {},
+  modelContextLengths: {},
   installedOllamaModels: [],
 
   loadInstalledOllamaModels: async () => {
@@ -98,6 +113,28 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     set((st) => ({
       selectedModels: { ...st.selectedModels, [sessionId]: model },
     })),
+
+  setReasoning: (sessionId, level) =>
+    set((st) => ({
+      reasoningLevels: { ...st.reasoningLevels, [sessionId]: level },
+    })),
+
+  setUsage: (sessionId, usage) =>
+    set((st) => ({ lastUsage: { ...st.lastUsage, [sessionId]: usage } })),
+
+  loadModelContext: async (model) => {
+    if (!model || get().modelContextLengths[model] !== undefined) return;
+    try {
+      const info = await ipc.ollamaModelInfo({ model });
+      set((st) => ({
+        modelContextLengths: { ...st.modelContextLengths, [model]: info.contextLength },
+      }));
+    } catch {
+      set((st) => ({
+        modelContextLengths: { ...st.modelContextLengths, [model]: null },
+      }));
+    }
+  },
 
   loadAll: async () => {
     try {
@@ -182,6 +219,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       modelLoading: { ...st.modelLoading, [info.id]: false },
       modelLoadingProgress: { ...st.modelLoadingProgress, [info.id]: 0 },
       selectedModels: { ...st.selectedModels, [info.id]: firstModel },
+      reasoningLevels: { ...st.reasoningLevels, [info.id]: "auto" },
     }));
   },
 
@@ -316,7 +354,8 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     }));
     try {
       const model = get().selectedModels[sessionId];
-      await ipc.sessionSend({ sessionId, message, model });
+      const reasoning = get().reasoningLevels[sessionId] ?? "auto";
+      await ipc.sessionSend({ sessionId, message, model, reasoning });
     } catch (e) {
       set((s) => ({
         streaming: { ...s.streaming, [sessionId]: false },

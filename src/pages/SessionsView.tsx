@@ -1,11 +1,15 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSessionsStore, type ToolCallItem } from "../store/sessions";
 import { NewSessionForm } from "../components/NewSessionForm";
 import { ModelLoadingScreen } from "../components/ModelLoadingScreen";
-import { Wrench, CheckCircle2, XCircle, Loader2, User, Bot, Brain } from "lucide-react";
+import {
+  Wrench, CheckCircle2, XCircle, Loader2, User, Bot, Brain, Play, Square,
+  FilePlus, FilePen, FileX, FileSymlink, RefreshCw, FolderGit2, Gauge,
+} from "lucide-react";
 import Markdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import { DiffViewer } from "../components/DiffViewer";
+import { ipc, type GitStatus, type GitFileStatus } from "../lib/ipc";
 
 const ROLE_META: Record<string, { label: string; icon: React.ReactNode }> = {
   user: { label: "Vous", icon: <User size={12} /> },
@@ -76,6 +80,9 @@ export function SessionsView() {
     creating,
     loaded,
     selectedModels,
+    reasoningLevels,
+    lastUsage,
+    modelContextLengths,
     installedOllamaModels,
     restoreMessages,
     createSession,
@@ -86,6 +93,8 @@ export function SessionsView() {
     setModelLoading,
     markModelReady,
     setSelectedModel,
+    setReasoning,
+    loadModelContext,
     loadInstalledOllamaModels,
   } = useSessionsStore();
 
@@ -105,6 +114,12 @@ export function SessionsView() {
   const loadingProgress = active ? modelLoadingProgress[active.id] ?? 0 : 0;
   const selectedModel = active ? selectedModels[active.id] ?? "" : "";
   const hasModels = installedOllamaModels.length > 0;
+  const reasoning = active ? reasoningLevels[active.id] ?? "auto" : "auto";
+  const usage = active ? lastUsage[active.id] : undefined;
+  const usedTokens = usage ? usage.tokensIn + usage.tokensOut : 0;
+  const ctxLen = selectedModel ? modelContextLengths[selectedModel] ?? null : null;
+  const ctxPct =
+    ctxLen && ctxLen > 0 ? Math.min(100, Math.round((usedTokens / ctxLen) * 100)) : null;
 
   useEffect(() => {
     if (!loaded || !activeId) return;
@@ -128,6 +143,11 @@ export function SessionsView() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId, installedOllamaModels, selectedModel]);
+
+  // Charge la taille de contexte du modèle sélectionné (pour l'indicateur).
+  useEffect(() => {
+    if (selectedModel) void loadModelContext(selectedModel);
+  }, [selectedModel, loadModelContext]);
 
   if (creating) {
     return (
@@ -170,28 +190,10 @@ export function SessionsView() {
   };
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
+    <div className="flex flex-1 overflow-hidden">
+      {/* Bloc 1 — conversation : chatbox, raisonnement, réponses (75%) */}
+      <div className="flex w-3/4 flex-col overflow-hidden">
       <header className="flex items-center gap-2 border-b border-border px-4 py-2 text-xs text-muted">
-        <span className="text-muted">Modèle</span>
-        {hasModels ? (
-          <select
-            value={selectedModel}
-            onChange={(e) => setSelectedModel(active.id, e.target.value)}
-            disabled={isStreaming}
-            className="rounded border border-border bg-surface px-2 py-1 text-xs text-fg focus:border-accent focus:outline-none disabled:opacity-50"
-          >
-            {installedOllamaModels.map((m) => (
-              <option key={m.name} value={m.name}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <span className="text-yellow-400">
-            Aucun modèle installé — installez-en un via l'onglet Ollama
-          </span>
-        )}
-        <span>•</span>
         <span>ollama</span>
         <span>•</span>
         <span className="truncate font-mono" title={active.workspace}>
@@ -278,6 +280,74 @@ export function SessionsView() {
       </div>
 
       <div className="border-t border-border p-3">
+        {/* Barre de contrôles : modèle · raisonnement · usage de contexte */}
+        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+          {hasModels ? (
+            <select
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(active.id, e.target.value)}
+              disabled={isStreaming}
+              title="Modèle"
+              className="rounded border border-border bg-surface px-2 py-1 text-xs text-fg focus:border-accent focus:outline-none disabled:opacity-50"
+            >
+              {installedOllamaModels.map((m) => (
+                <option key={m.name} value={m.name}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="text-yellow-400">
+              Aucun modèle installé — voir l'onglet Ollama
+            </span>
+          )}
+
+          <label className="flex items-center gap-1 text-muted" title="Intensité de raisonnement (modèles « thinking »)">
+            <Brain size={12} className="text-purple-400" />
+            <select
+              value={reasoning}
+              onChange={(e) => setReasoning(active.id, e.target.value)}
+              disabled={isStreaming}
+              className="rounded border border-border bg-surface px-2 py-1 text-xs text-fg focus:border-accent focus:outline-none disabled:opacity-50"
+            >
+              <option value="auto">Raisonnement : Auto</option>
+              <option value="off">Désactivé</option>
+              <option value="low">Faible</option>
+              <option value="medium">Moyen</option>
+              <option value="high">Élevé</option>
+            </select>
+          </label>
+
+          <div
+            className="ml-auto flex items-center gap-1.5 text-muted"
+            title={
+              ctxLen
+                ? `Contexte utilisé au dernier tour : ${usedTokens} / ${ctxLen} tokens`
+                : "Usage de contexte (après le premier échange)"
+            }
+          >
+            <Gauge size={12} />
+            {ctxLen ? (
+              <>
+                <span className="tabular-nums">
+                  {usedTokens.toLocaleString()} / {ctxLen.toLocaleString()}
+                </span>
+                <div className="h-1.5 w-16 overflow-hidden rounded bg-border/50">
+                  <div
+                    className={`h-full ${(ctxPct ?? 0) >= 90 ? "bg-red-500" : "bg-accent"}`}
+                    style={{ width: `${ctxPct ?? 0}%` }}
+                  />
+                </div>
+                <span className="w-8 text-right tabular-nums">{ctxPct}%</span>
+              </>
+            ) : (
+              <span className="tabular-nums">
+                {usedTokens > 0 ? `${usedTokens.toLocaleString()} tokens` : "contexte —"}
+              </span>
+            )}
+          </div>
+        </div>
+
         <div className="flex items-end gap-2">
           <textarea
             value={input}
@@ -300,22 +370,128 @@ export function SessionsView() {
           {isStreaming ? (
             <button
               onClick={() => void cancel(active.id)}
-              className="rounded border border-red-500/40 px-3 py-2 text-xs text-red-300 hover:bg-red-500/10"
+              title="Arrêter la génération"
+              aria-label="Arrêter la génération"
+              className="flex items-center justify-center rounded border border-red-500/40 p-2.5 text-red-300 hover:bg-red-500/10"
             >
-              Stop
+              <Square size={16} className="fill-current" />
             </button>
           ) : (
             <button
               onClick={submit}
               disabled={!input.trim() || !selectedModel}
-              title={!selectedModel ? "Sélectionnez un modèle" : undefined}
-              className="rounded bg-accent px-4 py-2 text-xs text-white disabled:opacity-50"
+              title={!selectedModel ? "Sélectionnez un modèle" : "Envoyer"}
+              aria-label="Envoyer"
+              className="flex items-center justify-center rounded bg-accent p-2.5 text-white hover:bg-accent/80 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-accent"
             >
-              Envoyer
+              <Play size={16} className="fill-current" />
             </button>
           )}
         </div>
       </div>
+      </div>
+
+      {/* Bloc 2 — fichiers du workspace (git) */}
+      <FileChangesPanel workspace={active.workspace} isStreaming={isStreaming} />
     </div>
+  );
+}
+
+/// Métadonnées d'affichage par statut de fichier git.
+const GIT_STATUS_META: Record<
+  GitFileStatus,
+  { label: string; icon: React.ReactNode; color: string }
+> = {
+  added: { label: "Ajouté", icon: <FilePlus size={13} />, color: "text-green-400" },
+  untracked: { label: "Nouveau", icon: <FilePlus size={13} />, color: "text-green-400" },
+  modified: { label: "Modifié", icon: <FilePen size={13} />, color: "text-yellow-400" },
+  deleted: { label: "Supprimé", icon: <FileX size={13} />, color: "text-red-400" },
+  renamed: { label: "Renommé", icon: <FileSymlink size={13} />, color: "text-blue-400" },
+};
+
+/// Panneau latéral listant les fichiers modifiés du workspace via git.
+function FileChangesPanel({
+  workspace,
+  isStreaming,
+}: {
+  workspace: string;
+  isStreaming: boolean;
+}) {
+  const [status, setStatus] = useState<GitStatus | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const refresh = useCallback(() => {
+    setLoading(true);
+    ipc
+      .workspaceGitStatus({ workspace })
+      .then(setStatus)
+      .catch(() => setStatus(null))
+      .finally(() => setLoading(false));
+  }, [workspace]);
+
+  // Rafraîchit au changement de workspace et quand le streaming bascule.
+  // Pendant une génération, on interroge git périodiquement pour un suivi live.
+  useEffect(() => {
+    refresh();
+    if (!isStreaming) return;
+    const id = setInterval(refresh, 2500);
+    return () => clearInterval(id);
+  }, [workspace, isStreaming, refresh]);
+
+  const changes = status?.changes ?? [];
+
+  return (
+    <aside className="flex w-1/4 shrink-0 flex-col overflow-hidden border-l border-border bg-bg">
+      <div className="flex items-center gap-2 border-b border-border px-3 py-2 text-xs">
+        <FolderGit2 size={14} className="text-accent" />
+        <span className="font-semibold text-fg">Modifications</span>
+        {changes.length > 0 && (
+          <span className="rounded bg-border/60 px-1.5 py-0.5 text-[10px] text-muted">
+            {changes.length}
+          </span>
+        )}
+        <button
+          onClick={refresh}
+          title="Rafraîchir"
+          aria-label="Rafraîchir"
+          className="ml-auto rounded p-1 text-muted hover:bg-border/40 hover:text-fg"
+        >
+          <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-2 py-2 text-xs">
+        {status === null ? (
+          <p className="px-1 py-2 text-muted">git indisponible sur ce répertoire.</p>
+        ) : !status.isRepo ? (
+          <p className="px-1 py-2 text-muted">
+            Répertoire non versionné (pas un dépôt git).
+          </p>
+        ) : changes.length === 0 ? (
+          <p className="px-1 py-2 text-muted">Aucune modification.</p>
+        ) : (
+          <ul className="space-y-0.5">
+            {changes.map((c) => {
+              const meta = GIT_STATUS_META[c.status];
+              const name = c.path.split("/").pop() ?? c.path;
+              const dir = c.path.slice(0, c.path.length - name.length);
+              return (
+                <li
+                  key={c.path}
+                  className="flex items-center gap-1.5 rounded px-1.5 py-1 hover:bg-border/30"
+                  title={`${meta.label} — ${c.path}`}
+                >
+                  <span className={meta.color}>{meta.icon}</span>
+                  <span className="truncate text-fg">{name}</span>
+                  {dir && (
+                    <span className="truncate text-[10px] text-muted">{dir}</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </aside>
   );
 }

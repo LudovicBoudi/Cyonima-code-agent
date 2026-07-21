@@ -105,6 +105,11 @@ export function CatalogView() {
       )
     : models;
 
+  // Tri par RAM minimum croissante, puis séparation installés / disponibles.
+  const sorted = [...filtered].sort((a, b) => a.ramMinGb - b.ramMinGb);
+  const installedModels = sorted.filter((m) => m.installed);
+  const availableModels = sorted.filter((m) => !m.installed);
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <header className="flex items-center gap-3 border-b border-border px-4 py-2 text-xs text-muted">
@@ -141,28 +146,92 @@ export function CatalogView() {
       </header>
 
       <div className="flex-1 overflow-y-auto">
-        <table className="w-full text-left text-xs">
-          <thead className="sticky top-0 bg-bg text-muted">
-            <tr>
-              <th className="px-4 py-2 font-medium">Nom</th>
-              <th className="px-2 py-2 font-medium">Type</th>
-              <th className="px-2 py-2 font-medium">Quant.</th>
-              <th className="px-2 py-2 font-medium">Taille</th>
-              <th className="px-2 py-2 font-medium">RAM min</th>
-              <th className="px-2 py-2 font-medium">Licence</th>
-              <th className="px-2 py-2 font-medium">Ollama</th>
-              <th className="px-4 py-2 font-medium text-right">Éligibilité</th>
-              <th className="px-4 py-2 font-medium text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((m) => (
-              <Row key={m.id} m={m} hw={hw} onInstalled={refresh} onOllamaPull={handleOllamaPull} ollamaPulling={ollamaPulling} pullProgress={pullProgress} isAnyPulling={ollamaPulling !== null} />
-            ))}
-          </tbody>
-        </table>
+        <section>
+          <div className="sticky top-0 z-10 border-b border-border bg-bg px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted">
+            Modèles installés ({installedModels.length})
+          </div>
+          <ModelTable
+            models={installedModels}
+            hw={hw}
+            onInstalled={refresh}
+            onOllamaPull={handleOllamaPull}
+            ollamaPulling={ollamaPulling}
+            pullProgress={pullProgress}
+            emptyLabel="Aucun modèle installé pour l'instant."
+          />
+        </section>
+
+        <section className="mt-2">
+          <div className="sticky top-0 z-10 border-y border-border bg-bg px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted">
+            Autres modèles disponibles ({availableModels.length})
+          </div>
+          <ModelTable
+            models={availableModels}
+            hw={hw}
+            onInstalled={refresh}
+            onOllamaPull={handleOllamaPull}
+            ollamaPulling={ollamaPulling}
+            pullProgress={pullProgress}
+            emptyLabel="Aucun autre modèle à afficher."
+          />
+        </section>
       </div>
     </div>
+  );
+}
+
+/// Tableau de modèles (en-tête + lignes). Réutilisé pour les blocs
+/// « installés » et « disponibles » du catalogue.
+function ModelTable({
+  models,
+  hw,
+  onInstalled,
+  onOllamaPull,
+  ollamaPulling,
+  pullProgress,
+  emptyLabel,
+}: {
+  models: ModelInfo[];
+  hw: HardwareInfo | null;
+  onInstalled: () => void;
+  onOllamaPull: (ollamaTag: string) => void;
+  ollamaPulling: string | null;
+  pullProgress: OllamaPullProgress | null;
+  emptyLabel: string;
+}) {
+  if (models.length === 0) {
+    return <p className="px-4 py-3 text-xs text-muted">{emptyLabel}</p>;
+  }
+  return (
+    <table className="w-full text-left text-xs">
+      <thead className="bg-bg text-muted">
+        <tr>
+          <th className="px-4 py-2 font-medium">Nom</th>
+          <th className="px-2 py-2 font-medium">Type</th>
+          <th className="px-2 py-2 font-medium">Quant.</th>
+          <th className="px-2 py-2 font-medium">Taille</th>
+          <th className="px-2 py-2 font-medium">RAM min</th>
+          <th className="px-2 py-2 font-medium">Licence</th>
+          <th className="px-2 py-2 font-medium">Ollama</th>
+          <th className="px-4 py-2 font-medium text-right">Éligibilité</th>
+          <th className="px-4 py-2 font-medium text-right">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {models.map((m) => (
+          <Row
+            key={m.id}
+            m={m}
+            hw={hw}
+            onInstalled={onInstalled}
+            onOllamaPull={onOllamaPull}
+            ollamaPulling={ollamaPulling}
+            pullProgress={pullProgress}
+            isAnyPulling={ollamaPulling !== null}
+          />
+        ))}
+      </tbody>
+    </table>
   );
 }
 
