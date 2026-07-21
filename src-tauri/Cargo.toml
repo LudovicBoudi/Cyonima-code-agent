@@ -54,6 +54,12 @@ globwalk = "0.9"
 regex = "1"
 walkdir = "2"
 
+# Backend GGUF local via candle (CPU-only). Cross-plateforme (Win/macOS/Linux).
+candle-core = { version = "0.11", default-features = false }
+candle-nn = { version = "0.11", default-features = false }
+candle-transformers = { version = "0.11", default-features = false }
+tokenizers = "0.22"
+
 # Détection VRAM GPU (Win32 DXGI). Le windows crate est déjà transitif via
 # tauri — on l'ajoute explicitement pour activer la feature.
 [target.'cfg(target_os = "windows")'.dependencies]
@@ -62,12 +68,6 @@ windows = { version = "0.61", features = [
     "Win32_Graphics_Dxgi",
     "Win32_Graphics_Dxgi_Common",
 ] }
-
-# Backend GGUF local via candle (CPU-only pour l'instant)
-candle-core = { version = "0.11", default-features = false }
-candle-nn = { version = "0.11", default-features = false }
-candle-transformers = { version = "0.11", default-features = false }
-tokenizers = "0.22"
 
 [features]
 # Par défaut on compile avec le backend candle GGUF built-in.
