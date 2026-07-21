@@ -1,58 +1,115 @@
 name: Release
 
+# Déclenché en poussant un tag de version, ex: `git tag v1.0.0 && git push origin v1.0.0`.
+# Peut aussi être lancé manuellement depuis l'onglet Actions.
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+
+# Nécessaire pour que tauri-action puisse créer/éditer la Release GitHub.
+permissions:
+  contents: write
 
 jobs:
-  release:
-    name: Build & publish ${{ matrix.os }}
+  build:
+    name: Build ${{ matrix.label }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            label: linux
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            label: windows
-          - os: macos-latest
+          - platform: macos-latest
             target: aarch64-apple-darwin
-            label: macos-arm
-          - os: macos-latest
+            args: "--target aarch64-apple-darwin"
+            label: macOS (Apple Silicon)
+          - platform: macos-latest
             target: x86_64-apple-darwin
-            label: macos-intel
-    runs-on: ${{ matrix.os }}
+            args: "--target x86_64-apple-darwin"
+            label: macOS (Intel)
+          - platform: ubuntu-22.04
+            target: ""
+            args: ""
+            label: Linux
+          - platform: windows-latest
+            target: ""
+            args: ""
+            label: Windows
+    runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+
       - name: Install Linux deps
-        if: matrix.label == 'linux'
+        if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev libayatana-appindicator3-dev
-      - run: npm ci
-      - name: Build Tauri
-        run: npm run tauri:build || true
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev
+
+      - name: Install frontend deps
+        run: npm ci
+
+      - name: Build, sign & publish (tauri-action)
+        uses: tauri-apps/tauri-action@v0
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # --- Signature macOS (facultatif : renseigner les secrets pour l'activer) ---
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
-          name: cyonima-${{ matrix.label }}
-          path: |
-            src-tauri/target/release/bundle/
-            src-tauri/target/release/Cyonima*
-            src-tauri/target/release/cyonima*
+          # Crée un brouillon de Release nommé d'après le tag (ex: "Cyonima IA v1.0.0").
+          # On publie manuellement après relecture des installateurs + checksums.
+          tagName: ${{ github.ref_name }}
+          releaseName: "Cyonima IA ${{ github.ref_name }}"
+          releaseBody: "Voir le CHANGELOG.md pour les nouveautés. Installateurs et SHA256SUMS.txt ci-dessous."
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+
+  checksums:
+    name: Générer les checksums SHA256
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Télécharger les assets, calculer et uploader SHA256SUMS
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p release-assets && cd release-assets
+          # Télécharge tous les installateurs de la Release (brouillon inclus).
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*' || true
+          # Génère les empreintes (en ignorant un éventuel SHA256SUMS.txt précédent).
+          rm -f SHA256SUMS.txt
+          if ls -A . >/dev/null 2>&1 && [ "$(ls -A .)" ]; then
+            sha256sum * > SHA256SUMS.txt
+            cat SHA256SUMS.txt
+            gh release upload "$TAG" SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            echo "Aucun asset trouvé sur la Release $TAG — checksums ignorés."
+          fi

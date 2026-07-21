@@ -24,7 +24,21 @@ Cyonima-ia-code-agent est l'inverse :
 | Persistance | SQLite (sessions + messages) |
 | Licence | MIT |
 
-## Prérequis
+## Installation
+
+### Télécharger (recommandé)
+
+Récupérez l'installateur pour votre OS depuis la page
+[**Releases**](https://github.com/LudovicBoudi/Cyonima-code-agent/releases) :
+
+- **Windows** : `.msi`
+- **macOS** : `.dmg` (Apple Silicon ou Intel)
+- **Linux** : `.deb` ou `.AppImage`
+
+Vérifiez l'intégrité via `SHA256SUMS.txt` joint à la release. Dans tous les cas,
+[Ollama](https://ollama.com) doit être installé et lancé (`ollama serve`).
+
+### Prérequis (build depuis les sources)
 
 - **[Ollama](https://ollama.com)** installé et lancé (`ollama serve`) — c'est le moteur d'inférence.
 - **Rust** ≥ 1.77 ([rustup](https://rustup.rs))
@@ -130,6 +144,7 @@ Le garde-fou est exposé en IPC : `hardware_get()` et `hardware_can_run_model(ra
 
 ## Documentation
 
+- [`CHANGELOG.md`](CHANGELOG.md) — historique des versions
 - [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) — schémas de l'application et des modules Rust
 - [`ROADMAP.md`](docs/ROADMAP.md) — jalons de développement
 - [`models-guide.md`](docs/models-guide.md) — quel modèle choisir selon la tâche (comparatif + repères)

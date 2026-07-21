@@ -164,9 +164,20 @@ Les jalons sont prévus pour être livrés dans l'ordre. Chacun a des critères 
 - Raccourcis clavier, onboarding, multi-window
 - **DoD** : snappy et utilisable sans doc.
 
-## J11 — Packaging & release
-- Signe macOS (notarization), Windows (sigstore via Trusted Signing)
-- Installateurs : `.msi`, `.dmg`, `.deb`, `.AppImage`
-- GitHub Releases auto + checksums
-- Changelog, store description, site
+## J11 — Packaging & release  ✅ (automatisation en place)
+- **Workflow `release.yml`** (déclenché par un tag `v*`) via `tauri-apps/tauri-action` :
+  - Build matriciel : Windows, Linux (Ubuntu 22.04), macOS Apple Silicon + Intel
+  - Création automatique d'une **Release GitHub** (en brouillon) avec les installateurs
+    joints : `.msi` (Windows), `.dmg` (macOS ×2), `.deb` + `.AppImage` (Linux)
+  - Job `checksums` : génère et publie `SHA256SUMS.txt` sur la Release
+- **Signature de code** : le workflow consomme les secrets s'ils sont présents
+  (macOS : `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`,
+  `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` pour la notarization ; Windows :
+  à câbler via Azure Trusted Signing dans `tauri.conf.json`). Sans secrets, les
+  installateurs sont produits **non signés** (fonctionnels).
+- **Changelog** : `CHANGELOG.md` (Keep a Changelog / SemVer), entrée v1.0.0.
+- **Version** : `1.0.0` (package.json, Cargo.toml, tauri.conf.json, status bar).
 - **DoD** : release publique v1.0.0 sur les 3 OS.
+  - Reste à faire côté mainteneur : fournir les certificats de signature (secrets),
+    pousser le tag `v1.0.0` pour déclencher le build, relire puis publier le brouillon
+    de Release. (Store description / site : hors périmètre code.)
