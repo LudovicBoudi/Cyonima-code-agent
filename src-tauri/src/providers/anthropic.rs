@@ -31,7 +31,11 @@ impl AnthropicProvider {
             .timeout(Duration::from_secs(600))
             .build()
             .expect("échec construction client HTTP Anthropic");
-        Self { endpoint, api_key, client }
+        Self {
+            endpoint,
+            api_key,
+            client,
+        }
     }
 }
 
@@ -72,7 +76,10 @@ enum AnthropicEvent {
     #[serde(rename = "message_start")]
     MessageStart,
     #[serde(rename = "content_block_start")]
-    ContentBlockStart { index: u32, content_block: AnthropicContentBlock },
+    ContentBlockStart {
+        index: u32,
+        content_block: AnthropicContentBlock,
+    },
     #[serde(rename = "content_block_delta")]
     ContentBlockDelta { index: u32, delta: AnthropicDelta },
     #[serde(rename = "content_block_stop")]
@@ -126,7 +133,9 @@ struct AnthropicErrorBody {
 
 #[async_trait]
 impl Provider for AnthropicProvider {
-    fn id(&self) -> &str { "anthropic" }
+    fn id(&self) -> &str {
+        "anthropic"
+    }
 
     fn capabilities(&self) -> Capabilities {
         Capabilities {

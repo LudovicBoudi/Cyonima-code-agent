@@ -46,17 +46,11 @@ impl Tool for SemanticSearch {
         let query = match args.get("query").and_then(|v| v.as_str()) {
             Some(q) => q,
             None => {
-                return ToolOutput::err(
-                    "semantic_search",
-                    "argument 'query' manquant",
-                );
+                return ToolOutput::err("semantic_search", "argument 'query' manquant");
             }
         };
 
-        let limit = args
-            .get("limit")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(5) as usize;
+        let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
 
         // Ouvrir la DB d'indexation.
         let db_path = dirs::data_local_dir()
@@ -80,10 +74,7 @@ impl Tool for SemanticSearch {
         {
             Ok(p) => p,
             Err(e) => {
-                return ToolOutput::err(
-                    "semantic_search",
-                    format!("ouverture index: {e}"),
-                );
+                return ToolOutput::err("semantic_search", format!("ouverture index: {e}"));
             }
         };
 
@@ -91,22 +82,18 @@ impl Tool for SemanticSearch {
         let mut embedder = match crate::indexing::embedder::Embedder::load() {
             Ok(e) => e,
             Err(e) => {
-                return ToolOutput::err(
-                    "semantic_search",
-                    format!("chargement embedder: {e}"),
-                );
+                return ToolOutput::err("semantic_search", format!("chargement embedder: {e}"));
             }
         };
 
         // Rechercher.
-        let results = match crate::indexing::search::search(&pool, &mut embedder, query, limit)
-            .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                return ToolOutput::err("semantic_search", format!("recherche: {e}"));
-            }
-        };
+        let results =
+            match crate::indexing::search::search(&pool, &mut embedder, query, limit).await {
+                Ok(r) => r,
+                Err(e) => {
+                    return ToolOutput::err("semantic_search", format!("recherche: {e}"));
+                }
+            };
 
         if results.is_empty() {
             return ToolOutput::ok(

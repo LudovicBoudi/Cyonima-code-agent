@@ -139,7 +139,7 @@ pub async fn model_catalog_list(state: State<'_, AppState>) -> Result<Vec<ModelI
     Ok(models::list_catalog(&state.registry).await)
 }
 
-/// Lance le téléchargement d'un modèle du catalogue. 
+/// Lance le téléchargement d'un modèle du catalogue.
 /// OBSOLÈTE : utiliser Ollama pull à la place.
 #[tauri::command]
 pub async fn model_download(
@@ -160,8 +160,12 @@ pub fn model_download_cancel(_state: State<'_, AppState>, _model_id: String) -> 
 #[tauri::command]
 pub async fn model_clear_cache(state: State<'_, AppState>) -> Result<(), String> {
     // 1) Vider le registry
-    state.registry.clear().await.map_err(|e| format!("Erreur lors du nettoyage du registry: {e}"))?;
-    
+    state
+        .registry
+        .clear()
+        .await
+        .map_err(|e| format!("Erreur lors du nettoyage du registry: {e}"))?;
+
     // 2) Supprimer les fichiers GGUF du dossier models
     let models_dir = default_models_dir();
     if models_dir.exists() {
@@ -171,10 +175,10 @@ pub async fn model_clear_cache(state: State<'_, AppState>) -> Result<(), String>
                 std::fs::create_dir_all(&models_dir)
                     .map_err(|e| format!("Erreur recréation dossier models: {e}"))?;
             }
-            Err(e) => return Err(format!("Erreur suppression dossier models: {e}"))
+            Err(e) => return Err(format!("Erreur suppression dossier models: {e}")),
         }
     }
-    
+
     Ok(())
 }
 
@@ -441,16 +445,11 @@ pub async fn ollama_pull_model(
                         if line_str.is_empty() {
                             continue;
                         }
-                        let Ok(parsed) =
-                            serde_json::from_str::<serde_json::Value>(line_str)
-                        else {
+                        let Ok(parsed) = serde_json::from_str::<serde_json::Value>(line_str) else {
                             continue;
                         };
 
-                        let status = parsed
-                            .get("status")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
+                        let status = parsed.get("status").and_then(|v| v.as_str()).unwrap_or("");
 
                         // Fin du pull : Ollama renvoie {"status":"success"}.
                         if status == "success" {
@@ -475,9 +474,7 @@ pub async fn ollama_pull_model(
 
                         // Throttle : un event de progression toutes les 200ms max.
                         let now = std::time::Instant::now();
-                        if now.duration_since(last_emit)
-                            >= std::time::Duration::from_millis(200)
-                        {
+                        if now.duration_since(last_emit) >= std::time::Duration::from_millis(200) {
                             last_emit = now;
                             let _ = app.emit("ollama:pull:progress", &parsed);
                         }
@@ -646,9 +643,7 @@ pub async fn config_get(state: State<'_, AppState>) -> Result<serde_json::Value,
 /// Charge et merge la config d'un workspace spécifique. Renvoie la config
 /// resultante (globale + override workspace).
 #[tauri::command]
-pub async fn config_get_workspace(
-    workspace: String,
-) -> Result<serde_json::Value, String> {
+pub async fn config_get_workspace(workspace: String) -> Result<serde_json::Value, String> {
     let global = ConfigManager::open().await.get().await;
     let ws = ConfigManager::load_workspace_config(&workspace)
         .await
@@ -675,7 +670,11 @@ pub async fn config_set_default_provider(
     state: State<'_, AppState>,
     provider: Option<String>,
 ) -> Result<(), String> {
-    state.config.set_default_provider(provider).await.map_err(|e| e.to_string())
+    state
+        .config
+        .set_default_provider(provider)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Met à jour le modèle par défaut dans la config globale.
@@ -684,7 +683,11 @@ pub async fn config_set_default_model(
     state: State<'_, AppState>,
     model: Option<String>,
 ) -> Result<(), String> {
-    state.config.set_default_model(model).await.map_err(|e| e.to_string())
+    state
+        .config
+        .set_default_model(model)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Met à jour l'endpoint Ollama dans la config globale.
@@ -693,7 +696,11 @@ pub async fn config_set_ollama_endpoint(
     state: State<'_, AppState>,
     endpoint: Option<String>,
 ) -> Result<(), String> {
-    state.config.set_ollama_endpoint(endpoint).await.map_err(|e| e.to_string())
+    state
+        .config
+        .set_ollama_endpoint(endpoint)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Met à jour un override de permission pour un outil.
@@ -778,8 +785,7 @@ pub async fn index_search(
     limit: Option<usize>,
 ) -> Result<Vec<SearchResult>, String> {
     let pool = open_index_pool().await.map_err(|e| e.to_string())?;
-    let mut embedder =
-        crate::indexing::embedder::Embedder::load().map_err(|e| e.to_string())?;
+    let mut embedder = crate::indexing::embedder::Embedder::load().map_err(|e| e.to_string())?;
     let limit = limit.unwrap_or(10);
     let results = crate::indexing::search::search(&pool, &mut embedder, &query, limit)
         .await

@@ -31,7 +31,11 @@ impl OpenAiProvider {
             .timeout(Duration::from_secs(600))
             .build()
             .expect("échec construction client HTTP OpenAI");
-        Self { endpoint, api_key, client }
+        Self {
+            endpoint,
+            api_key,
+            client,
+        }
     }
 }
 
@@ -116,7 +120,9 @@ struct OpenAiUsage {
 
 #[async_trait]
 impl Provider for OpenAiProvider {
-    fn id(&self) -> &str { "openai" }
+    fn id(&self) -> &str {
+        "openai"
+    }
 
     fn capabilities(&self) -> Capabilities {
         Capabilities {
@@ -133,7 +139,10 @@ impl Provider for OpenAiProvider {
             messages: req
                 .messages
                 .iter()
-                .map(|m| OpenAiMessage { role: m.role.as_str().into(), content: m.content.clone() })
+                .map(|m| OpenAiMessage {
+                    role: m.role.as_str().into(),
+                    content: m.content.clone(),
+                })
                 .collect(),
             stream: true,
             temperature: req.temperature,

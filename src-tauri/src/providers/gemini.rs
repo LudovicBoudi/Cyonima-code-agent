@@ -34,7 +34,11 @@ impl GeminiProvider {
             .timeout(Duration::from_secs(600))
             .build()
             .expect("échec construction client HTTP Gemini");
-        Self { endpoint, api_key, client }
+        Self {
+            endpoint,
+            api_key,
+            client,
+        }
     }
 }
 
@@ -127,7 +131,9 @@ struct GeminiUsage {
 
 #[async_trait]
 impl Provider for GeminiProvider {
-    fn id(&self) -> &str { "gemini" }
+    fn id(&self) -> &str {
+        "gemini"
+    }
 
     fn capabilities(&self) -> Capabilities {
         Capabilities {
@@ -157,7 +163,9 @@ impl Provider for GeminiProvider {
         for m in &req.messages {
             match m.role {
                 super::Role::System => {
-                    system_parts.push(GeminiReqPart { text: Some(m.content.clone()) });
+                    system_parts.push(GeminiReqPart {
+                        text: Some(m.content.clone()),
+                    });
                 }
                 other => {
                     // Gemini utilise "user" et "model" (pas "assistant").
@@ -168,7 +176,9 @@ impl Provider for GeminiProvider {
                     };
                     contents.push(GeminiReqContent {
                         role,
-                        parts: vec![GeminiReqPart { text: Some(m.content.clone()) }],
+                        parts: vec![GeminiReqPart {
+                            text: Some(m.content.clone()),
+                        }],
                     });
                 }
             }
@@ -179,7 +189,10 @@ impl Provider for GeminiProvider {
             system_instruction: if system_parts.is_empty() {
                 None
             } else {
-                Some(GeminiReqContent { role: "user".into(), parts: system_parts })
+                Some(GeminiReqContent {
+                    role: "user".into(),
+                    parts: system_parts,
+                })
             },
             generation_config: Some(GeminiGenerationConfig {
                 temperature: req.temperature,

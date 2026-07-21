@@ -3,8 +3,8 @@
 
 use sqlx::sqlite::SqlitePool;
 
-use super::embedder::{cosine_similarity, Embedder, EmbedError};
 use super::blob_to_floats;
+use super::embedder::{cosine_similarity, EmbedError, Embedder};
 
 /// Résultat de recherche sémantique.
 #[derive(Debug, Clone)]
@@ -53,7 +53,11 @@ pub async fn search(
         .collect();
 
     // Trier par score décroissant.
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     results.truncate(limit);
 
     Ok(results)

@@ -30,7 +30,7 @@ pub enum EmbedError {
 }
 
 impl Embedder {
-    /// Charge l'embedder depuis le cache local. 
+    /// Charge l'embedder depuis le cache local.
     /// DÉSACTIVÉ : évite les téléchargements automatiques qui déclenchent Windows Defender.
     pub fn load() -> Result<Self, EmbedError> {
         Err(EmbedError::ModelUnavailable(
@@ -57,12 +57,8 @@ impl Embedder {
             .unsqueeze(0)
             .map_err(|e| EmbedError::Inference(e.to_string()))?;
 
-        let token_type_ids = Tensor::zeros(
-            input_ids.shape(),
-            DType::U32,
-            &self.device,
-        )
-        .map_err(|e| EmbedError::Inference(e.to_string()))?;
+        let token_type_ids = Tensor::zeros(input_ids.shape(), DType::U32, &self.device)
+            .map_err(|e| EmbedError::Inference(e.to_string()))?;
 
         let mask_vec: Vec<f32> = attention_mask.iter().map(|&m| m as f32).collect();
         let attention_mask = Tensor::new(mask_vec.as_slice(), &self.device)

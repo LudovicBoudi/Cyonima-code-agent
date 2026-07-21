@@ -356,7 +356,7 @@ impl SessionManager {
     ) -> Result<(), String> {
         tracing::info!("=== DEBUT session_send pour session {} ===", session_id);
         tracing::info!("Message reçu: '{}'", message);
-        
+
         let session = self
             .get(&session_id)
             .ok_or_else(|| format!("Session '{session_id}' introuvable"))?;
@@ -403,7 +403,10 @@ impl SessionManager {
         }
 
         let task_session = Arc::clone(&session);
-        tracing::info!("Lancement de la tâche agent_loop pour session {}", session_id);
+        tracing::info!(
+            "Lancement de la tâche agent_loop pour session {}",
+            session_id
+        );
         tokio::spawn(async move {
             agent_loop(app, gateway, task_session).await;
         });
@@ -450,7 +453,9 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
             "session:error",
             ErrorEvent {
                 session_id: session_id.clone(),
-                error: "Aucun modèle sélectionné — choisissez-en un dans le menu déroulant du chat.".into(),
+                error:
+                    "Aucun modèle sélectionné — choisissez-en un dans le menu déroulant du chat."
+                        .into(),
             },
         );
         let mut busy = session.busy.lock().await;
@@ -472,7 +477,7 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
 
         let messages = { session.messages.lock().await.clone() };
         tracing::info!("Nombre de messages dans l'historique: {}", messages.len());
-        
+
         let req = ChatRequest {
             messages,
             model: model.clone(),
@@ -482,7 +487,7 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
         };
 
         tracing::info!("Appel du provider.stream() pour session {}", session_id);
-        
+
         // Pour LlamaCpp, émettre un événement de début de chargement si c'est le premier appel
         if session.info.provider_id == crate::providers::ProviderKind::LlamaCpp {
             let _ = app.emit(
@@ -494,7 +499,7 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
                 },
             );
         }
-        
+
         let mut stream = session.provider.stream(req).await;
         let mut assistant_buffer = String::new();
         let mut tool_calls: Vec<providers::ToolCall> = Vec::new();
@@ -510,7 +515,9 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
             match event {
                 ChatEvent::Token(tok) => {
                     // Émettre la fin du chargement au premier token pour LlamaCpp
-                    if first_token && session.info.provider_id == crate::providers::ProviderKind::LlamaCpp {
+                    if first_token
+                        && session.info.provider_id == crate::providers::ProviderKind::LlamaCpp
+                    {
                         let _ = app.emit(
                             "session:model_loading",
                             crate::sessions::ModelLoadingEvent {
@@ -521,7 +528,7 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
                         );
                         first_token = false;
                     }
-                    
+
                     tracing::debug!("Token reçu pour session {}: '{}'", session_id, tok);
                     assistant_buffer.push_str(&tok);
                     let _ = app.emit(
@@ -560,7 +567,7 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
                 }
                 ChatEvent::Error(err) => {
                     tracing::error!("Erreur dans le stream pour session {}: {}", session_id, err);
-                    
+
                     // Émettre la fin du chargement en cas d'erreur pour LlamaCpp
                     if session.info.provider_id == crate::providers::ProviderKind::LlamaCpp {
                         let _ = app.emit(
@@ -572,7 +579,7 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
                             },
                         );
                     }
-                    
+
                     had_error = true;
                     errored = true;
                     let _ = app.emit(
@@ -705,7 +712,10 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
             },
         );
     } else {
-        tracing::warn!("Agent loop terminé avec erreur ou annulation pour session {}", session_id);
+        tracing::warn!(
+            "Agent loop terminé avec erreur ou annulation pour session {}",
+            session_id
+        );
     }
     tracing::info!("=== FIN agent_loop pour session {} ===", session_id);
 }

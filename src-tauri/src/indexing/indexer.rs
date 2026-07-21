@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use sqlx::sqlite::SqlitePool;
 
-use super::embedder::{Embedder, EmbedError};
+use super::embedder::{EmbedError, Embedder};
 use super::{CHUNK_OVERLAP, CHUNK_SIZE};
 
 /// Un chunk de fichier avec son chemin et numéro de ligne.
@@ -42,11 +42,9 @@ pub async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     .execute(pool)
     .await?;
 
-    sqlx::query(
-        "CREATE INDEX IF NOT EXISTS idx_chunks_file ON chunks(file_path)",
-    )
-    .execute(pool)
-    .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_chunks_file ON chunks(file_path)")
+        .execute(pool)
+        .await?;
 
     Ok(())
 }
@@ -60,17 +58,15 @@ pub async fn clear_index(pool: &SqlitePool) -> Result<(), sqlx::Error> {
 /// Parcourt un répertoire et retourne les fichiers texte à indexer.
 pub fn walk_workspace(root: &Path, ignore_patterns: &[&str]) -> Vec<PathBuf> {
     let mut files = Vec::new();
-    let walker = walkdir::WalkDir::new(root)
-        .into_iter()
-        .filter_entry(|e| {
-            let name = e.file_name().to_string_lossy();
-            // Ignorer les répertoires cachés et binaires.
-            !name.starts_with('.')
-                && !name.starts_with("node_modules")
-                && !name.starts_with("target")
-                && !name.starts_with("dist")
-                && !ignore_patterns.iter().any(|p| name.contains(p))
-        });
+    let walker = walkdir::WalkDir::new(root).into_iter().filter_entry(|e| {
+        let name = e.file_name().to_string_lossy();
+        // Ignorer les répertoires cachés et binaires.
+        !name.starts_with('.')
+            && !name.starts_with("node_modules")
+            && !name.starts_with("target")
+            && !name.starts_with("dist")
+            && !ignore_patterns.iter().any(|p| name.contains(p))
+    });
 
     for entry in walker.flatten() {
         if entry.file_type().is_file() {
@@ -93,11 +89,42 @@ fn is_indexable_file(path: &Path) -> bool {
 
     matches!(
         ext.as_str(),
-        "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "java" | "c" | "cpp"
-            | "h" | "hpp" | "go" | "rb" | "php" | "swift" | "kt" | "cs"
-            | "css" | "scss" | "html" | "xml" | "json" | "toml" | "yaml"
-            | "yml" | "md" | "txt" | "sql" | "sh" | "bash" | "zsh"
-            | "fish" | "ps1" | "bat" | "cmd" | "vue" | "svelte"
+        "rs" | "ts"
+            | "tsx"
+            | "js"
+            | "jsx"
+            | "py"
+            | "java"
+            | "c"
+            | "cpp"
+            | "h"
+            | "hpp"
+            | "go"
+            | "rb"
+            | "php"
+            | "swift"
+            | "kt"
+            | "cs"
+            | "css"
+            | "scss"
+            | "html"
+            | "xml"
+            | "json"
+            | "toml"
+            | "yaml"
+            | "yml"
+            | "md"
+            | "txt"
+            | "sql"
+            | "sh"
+            | "bash"
+            | "zsh"
+            | "fish"
+            | "ps1"
+            | "bat"
+            | "cmd"
+            | "vue"
+            | "svelte"
     )
 }
 
@@ -171,9 +198,7 @@ pub async fn index_workspace(
                 all_chunks.extend(chunks);
             }
             Err(e) => {
-                stats
-                    .errors
-                    .push(format!("{}: {e}", path.display()));
+                stats.errors.push(format!("{}: {e}", path.display()));
             }
         }
     }

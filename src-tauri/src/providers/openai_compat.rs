@@ -29,7 +29,11 @@ impl OpenAiCompatProvider {
             .timeout(Duration::from_secs(600))
             .build()
             .expect("échec construction client HTTP OpenAI-compat");
-        Self { endpoint, api_key, client }
+        Self {
+            endpoint,
+            api_key,
+            client,
+        }
     }
 }
 
@@ -118,7 +122,9 @@ struct CompatUsage {
 
 #[async_trait]
 impl Provider for OpenAiCompatProvider {
-    fn id(&self) -> &str { "openai_compat" }
+    fn id(&self) -> &str {
+        "openai_compat"
+    }
 
     fn capabilities(&self) -> Capabilities {
         // LM Studio / vLLM : tool calling dépend du modèle servé. On déclare
@@ -138,7 +144,10 @@ impl Provider for OpenAiCompatProvider {
             messages: req
                 .messages
                 .iter()
-                .map(|m| CompatMessage { role: m.role.as_str().into(), content: m.content.clone() })
+                .map(|m| CompatMessage {
+                    role: m.role.as_str().into(),
+                    content: m.content.clone(),
+                })
                 .collect(),
             stream: true,
             temperature: req.temperature,

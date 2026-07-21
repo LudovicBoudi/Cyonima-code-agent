@@ -219,7 +219,9 @@ pub fn build(params: ProviderParams) -> Arc<dyn Provider> {
                 .or_else(|| crate::secrets::get_key("openai_compat"));
             // Endpoint obligatoire pour openai_compat. Sans endpoint on construit
             // quand même un provider qui retournera une erreur claire au 1er appel.
-            let endpoint = params.endpoint.unwrap_or_else(|| "http://localhost:1234/v1".into());
+            let endpoint = params
+                .endpoint
+                .unwrap_or_else(|| "http://localhost:1234/v1".into());
             Arc::new(openai_compat::OpenAiCompatProvider::new(endpoint, api_key))
         }
     }

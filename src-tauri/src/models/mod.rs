@@ -1,9 +1,9 @@
 //! Registry, catalogue et downloader de modèles.
 //!
-//! MIGRATION OLLAMA : Plus de téléchargement GGUF direct. 
+//! MIGRATION OLLAMA : Plus de téléchargement GGUF direct.
 //! Seuls le registry et le catalogue Ollama restent actifs.
 //! - **Modèles Ollama** : gérés via `ollama pull`
-//! - **Modèles custom** : import via [`import_custom`] 
+//! - **Modèles custom** : import via [`import_custom`]
 
 // pub mod downloader; // OBSOLÈTE - utiliser Ollama
 pub mod registry;
@@ -76,7 +76,7 @@ fn parse_catalog() -> Vec<CatalogEntry> {
     }
 }
 
-/// Renvoie les entrées brutes du catalogue (pour compatibilité legacy). 
+/// Renvoie les entrées brutes du catalogue (pour compatibilité legacy).
 /// OBSOLÈTE : plus utilisé pour les téléchargements directs.
 pub fn find_catalog_entry(id: &str) -> Option<CatalogEntry> {
     parse_catalog().into_iter().find(|e| e.id == id)
@@ -85,24 +85,22 @@ pub fn find_catalog_entry(id: &str) -> Option<CatalogEntry> {
 /// Renvoie le catalogue avec statut `installed` calculé à partir du registry et Ollama.
 pub async fn list_catalog(registry: &registry::Registry) -> Vec<ModelInfo> {
     let installed = registry.list().await;
-    
+
     // Récupère les modèles déjà installés dans Ollama (localhost:11434).
     // Si Ollama n'est pas joignable, on continue avec une liste vide plutôt
     // que d'échouer : le catalogue reste consultable hors-ligne.
     let ollama_models = crate::ipc::fetch_ollama_models("http://localhost:11434")
         .await
         .unwrap_or_default();
-    let ollama_tags: std::collections::HashSet<String> = ollama_models
-        .iter()
-        .map(|m| m.name.clone())
-        .collect();
+    let ollama_tags: std::collections::HashSet<String> =
+        ollama_models.iter().map(|m| m.name.clone()).collect();
 
     parse_catalog()
         .into_iter()
         .map(|e| {
             let inst = installed.iter().find(|i| i.id == e.id);
             let ollama_installed = ollama_tags.contains(&e.ollama_tag);
-            
+
             ModelInfo {
                 id: e.id.clone(),
                 name: e.name.clone(),

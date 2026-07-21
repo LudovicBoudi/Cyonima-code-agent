@@ -219,31 +219,33 @@ mod tests {
 
     #[tokio::test]
     async fn open_creates_default_config() {
-        let tmp = std::env::temp_dir().join(format!(
-            "cyonima-config-{}.toml",
-            uuid::Uuid::new_v4()
-        ));
+        let tmp =
+            std::env::temp_dir().join(format!("cyonima-config-{}.toml", uuid::Uuid::new_v4()));
         let cm = ConfigManager {
             inner: Arc::new(RwLock::new(Config::default())),
             global_path: tmp.clone(),
         };
         let cfg = cm.get().await;
-        assert!(cfg.storage.models_dir.to_string_lossy().contains(".cyonima"));
+        assert!(cfg
+            .storage
+            .models_dir
+            .to_string_lossy()
+            .contains(".cyonima"));
         assert!(cfg.provider.default_provider.is_none());
         tokio::fs::remove_file(&tmp).await.ok();
     }
 
     #[tokio::test]
     async fn set_and_get_provider() {
-        let tmp = std::env::temp_dir().join(format!(
-            "cyonima-config-{}.toml",
-            uuid::Uuid::new_v4()
-        ));
+        let tmp =
+            std::env::temp_dir().join(format!("cyonima-config-{}.toml", uuid::Uuid::new_v4()));
         let cm = ConfigManager {
             inner: Arc::new(RwLock::new(Config::default())),
             global_path: tmp.clone(),
         };
-        cm.set_default_provider(Some("openai".into())).await.unwrap();
+        cm.set_default_provider(Some("openai".into()))
+            .await
+            .unwrap();
         let cfg = cm.get().await;
         assert_eq!(cfg.provider.default_provider.as_deref(), Some("openai"));
         tokio::fs::remove_file(&tmp).await.ok();
@@ -276,7 +278,11 @@ mod tests {
             Some("auto")
         );
         assert_eq!(
-            merged.permissions.overrides.get("write_file").map(|s| s.as_str()),
+            merged
+                .permissions
+                .overrides
+                .get("write_file")
+                .map(|s| s.as_str()),
             Some("ask")
         );
     }

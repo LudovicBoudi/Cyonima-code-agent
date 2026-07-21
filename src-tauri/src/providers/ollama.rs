@@ -151,10 +151,16 @@ impl OllamaProvider {
             .send()
             .await;
         let Ok(resp) = resp else {
-            return ModelCaps { tools: true, thinking: false };
+            return ModelCaps {
+                tools: true,
+                thinking: false,
+            };
         };
         if !resp.status().is_success() {
-            return ModelCaps { tools: true, thinking: false };
+            return ModelCaps {
+                tools: true,
+                thinking: false,
+            };
         }
 
         #[derive(Deserialize)]
@@ -167,7 +173,10 @@ impl OllamaProvider {
                 tools: show.capabilities.iter().any(|c| c == "tools"),
                 thinking: show.capabilities.iter().any(|c| c == "thinking"),
             },
-            _ => ModelCaps { tools: true, thinking: false },
+            _ => ModelCaps {
+                tools: true,
+                thinking: false,
+            },
         }
     }
 }
