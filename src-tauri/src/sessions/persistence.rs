@@ -38,7 +38,7 @@ use sqlx::Row;
 use tokio::sync::Mutex;
 
 use super::SessionInfo;
-use crate::providers::{ChatMessage, ProviderKind, Role};
+use crate::providers::{ChatMessage, ProviderKind, Role, ToolCallInfo};
 
 /// Pool SQLite partagé via `AppState`. À l'usage on wrap les opérations dans
 /// le pool Sqlx (peek → execute / fetch) — pas de Mutex nécessaire car Sqlx
@@ -97,6 +97,9 @@ impl Persistence {
                 content       TEXT NOT NULL,
                 seq           INTEGER NOT NULL,
                 created_at    TEXT NOT NULL,
+                tool_call_id  TEXT,
+                tool_name     TEXT,
+                tool_calls_json TEXT,
                 FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, seq);
@@ -104,6 +107,16 @@ impl Persistence {
         )
         .execute(&self.pool)
         .await?;
+        // Migration douce : ajouter les colonnes si la table existait déjà
+        // sans elles (SQLite ne supporte pas ALTER TABLE ADD COLUMN IF NOT EXISTS,
+        // mais une erreur "duplicate column" est bénigne).
+        for col_sql in &[
+            "ALTER TABLE messages ADD COLUMN tool_call_id TEXT",
+            "ALTER TABLE messages ADD COLUMN tool_name TEXT",
+            "ALTER TABLE messages ADD COLUMN tool_calls_json TEXT",
+        ] {
+            let _ = sqlx::query(col_sql).execute(&self.pool).await;
+        }
         Ok(())
     }
 
@@ -213,10 +226,14 @@ impl Persistence {
             .fetch_one(&self.pool)
             .await?;
         let seq = count + 1;
+        let tool_calls_json = msg
+            .tool_calls
+            .as_ref()
+            .map(|tcs| serde_json::to_string(tcs).unwrap_or_default());
         sqlx::query(
             r#"
-            INSERT INTO messages (session_id, role, content, seq, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO messages (session_id, role, content, seq, created_at, tool_call_id, tool_name, tool_calls_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(session_id)
@@ -224,6 +241,9 @@ impl Persistence {
         .bind(&msg.content)
         .bind(seq)
         .bind(Utc::now().to_rfc3339())
+        .bind(&msg.tool_call_id)
+        .bind(&msg.tool_name)
+        .bind(&tool_calls_json)
         .execute(&self.pool)
         .await?;
         // Touch updated_at sur la session.
@@ -238,7 +258,7 @@ impl Persistence {
     /// Récupère tous les messages d'une session dans l'ordre.
     pub async fn load_messages(&self, session_id: &str) -> anyhow::Result<Vec<ChatMessage>> {
         let rows =
-            sqlx::query("SELECT role, content FROM messages WHERE session_id = ? ORDER BY seq ASC")
+            sqlx::query("SELECT role, content, tool_call_id, tool_name, tool_calls_json FROM messages WHERE session_id = ? ORDER BY seq ASC")
                 .bind(session_id)
                 .fetch_all(&self.pool)
                 .await?;
@@ -246,6 +266,12 @@ impl Persistence {
         for r in rows {
             let role_str: String = r.try_get("role")?;
             let content: String = r.try_get("content")?;
+            let tool_call_id: Option<String> = r.try_get("tool_call_id")?;
+            let tool_name: Option<String> = r.try_get("tool_name")?;
+            let tool_calls_json: Option<String> = r.try_get("tool_calls_json")?;
+            let tool_calls = tool_calls_json.and_then(|json| {
+                serde_json::from_str::<Vec<ToolCallInfo>>(&json).ok()
+            });
             let role = match role_str.as_str() {
                 "system" => Role::System,
                 "user" => Role::User,
@@ -253,7 +279,13 @@ impl Persistence {
                 "tool" => Role::Tool,
                 _ => Role::User,
             };
-            out.push(ChatMessage { role, content });
+            out.push(ChatMessage {
+                role,
+                content,
+                tool_call_id,
+                tool_name,
+                tool_calls,
+            });
         }
         Ok(out)
     }
@@ -314,6 +346,9 @@ mod tests {
             &ChatMessage {
                 role: Role::User,
                 content: "hello".into(),
+                tool_call_id: None,
+                tool_name: None,
+                tool_calls: None,
             },
         )
         .await
@@ -323,6 +358,9 @@ mod tests {
             &ChatMessage {
                 role: Role::Assistant,
                 content: "hi!".into(),
+                tool_call_id: None,
+                tool_name: None,
+                tool_calls: None,
             },
         )
         .await
@@ -349,6 +387,9 @@ mod tests {
             &ChatMessage {
                 role: Role::User,
                 content: "hi".into(),
+                tool_call_id: None,
+                tool_name: None,
+                tool_calls: None,
             },
         )
         .await

@@ -164,9 +164,52 @@ impl Provider for AnthropicProvider {
             system: system_prompt,
             messages: filtered_messages
                 .iter()
-                .map(|m| AnthropicMessage {
-                    role: m.role.as_str().into(),
-                    content: serde_json::Value::String(m.content.clone()),
+                .map(|m| {
+                    // Anthropic utilise des content blocks pour les tool calls/results.
+                    let content = match m.role {
+                        super::Role::Assistant => {
+                            // Assistant avec tool_calls → content blocks
+                            let mut blocks: Vec<serde_json::Value> = Vec::new();
+                            if !m.content.is_empty() {
+                                blocks.push(serde_json::json!({
+                                    "type": "text",
+                                    "text": m.content,
+                                }));
+                            }
+                            if let Some(ref tcs) = m.tool_calls {
+                                for tc in tcs {
+                                    blocks.push(serde_json::json!({
+                                        "type": "tool_use",
+                                        "id": tc.id,
+                                        "name": tc.tool,
+                                        "input": tc.arguments,
+                                    }));
+                                }
+                            }
+                            if blocks.is_empty() {
+                                serde_json::Value::String(m.content.clone())
+                            } else {
+                                serde_json::Value::Array(blocks)
+                            }
+                        }
+                        super::Role::Tool => {
+                            // Tool result → tool_result content block dans un user msg
+                            let tool_result_id = m.tool_call_id.clone().unwrap_or_default();
+                            serde_json::json!([{
+                                "type": "tool_result",
+                                "tool_use_id": tool_result_id,
+                                "content": m.content,
+                            }])
+                        }
+                        _ => serde_json::Value::String(m.content.clone()),
+                    };
+                    // Anthropic exige "user" pour tool_result (pas "tool")
+                    let role = if m.role == super::Role::Tool {
+                        "user".to_string()
+                    } else {
+                        m.role.as_str().into()
+                    };
+                    AnthropicMessage { role, content }
                 })
                 .collect(),
             stream: true,

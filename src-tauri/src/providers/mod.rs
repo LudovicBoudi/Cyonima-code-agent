@@ -29,6 +29,23 @@ use std::sync::Arc;
 pub struct ChatMessage {
     pub role: Role,
     pub content: String,
+    /// Pour les messages `tool` : identifiant du tool_call auquel on répond.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub tool_call_id: Option<String>,
+    /// Pour les messages `tool` : nom de l'outil exécuté (utile pour Gemini).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub tool_name: Option<String>,
+    /// Pour les messages `assistant` contenant des tool_calls.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub tool_calls: Option<Vec<ToolCallInfo>>,
+}
+
+/// Information de tool_call à stocker dans un message assistant.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolCallInfo {
+    pub id: String,
+    pub tool: String,
+    pub arguments: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

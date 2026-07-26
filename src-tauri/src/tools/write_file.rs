@@ -22,11 +22,11 @@ impl Tool for WriteFile {
     fn spec(&self) -> ToolSpec {
         ToolSpec {
             name: "write_file".into(),
-            description: "Écrit (ou écrase) un fichier dans le workspace.".into(),
+            description: "Écrit un fichier dans le workspace. Le chemin doit rester dans le workspace (relatif ou absolu). Les chemins hors workspace sont rejetés.".into(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string", "description": "Chemin relatif au workspace" },
+                    "path": { "type": "string", "description": "Chemin du fichier (relatif ex: src/main.rs, ou absolu dans le workspace)" },
                     "content": { "type": "string", "description": "Contenu intégral à écrire" }
                 },
                 "required": ["path", "content"]

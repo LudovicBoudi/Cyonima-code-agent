@@ -42,7 +42,7 @@ impl Tool for Bash {
     fn spec(&self) -> ToolSpec {
         ToolSpec {
             name: "bash".into(),
-            description: "Exécute une commande shell dans le workspace. Always requires explicit user approval.".into(),
+            description: "Exécute une commande shell dans le workspace. La commande s'exécute avec le workspace comme répertoire courant. Demande une approbation utilisateur explicite.".into(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {

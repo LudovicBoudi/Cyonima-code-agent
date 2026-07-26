@@ -63,6 +63,22 @@ struct GeminiReqContent {
 struct GeminiReqPart {
     #[serde(skip_serializing_if = "Option::is_none")]
     text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "functionCall")]
+    function_call: Option<GeminiFunctionCallPart>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "functionResponse")]
+    function_response: Option<GeminiFunctionResponsePart>,
+}
+
+#[derive(Debug, Serialize)]
+struct GeminiFunctionCallPart {
+    name: String,
+    args: serde_json::Value,
+}
+
+#[derive(Debug, Serialize)]
+struct GeminiFunctionResponsePart {
+    name: String,
+    response: serde_json::Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -165,19 +181,60 @@ impl Provider for GeminiProvider {
                 super::Role::System => {
                     system_parts.push(GeminiReqPart {
                         text: Some(m.content.clone()),
+                        function_call: None,
+                        function_response: None,
                     });
                 }
-                other => {
-                    // Gemini utilise "user" et "model" (pas "assistant").
-                    let role = match other {
+                super::Role::Assistant => {
+                    let role = "model".to_string();
+                    let mut parts: Vec<GeminiReqPart> = Vec::new();
+                    if !m.content.is_empty() {
+                        parts.push(GeminiReqPart {
+                            text: Some(m.content.clone()),
+                            function_call: None,
+                            function_response: None,
+                        });
+                    }
+                    if let Some(ref tcs) = m.tool_calls {
+                        for tc in tcs {
+                            parts.push(GeminiReqPart {
+                                text: None,
+                                function_call: Some(GeminiFunctionCallPart {
+                                    name: tc.tool.clone(),
+                                    args: tc.arguments.clone(),
+                                }),
+                                function_response: None,
+                            });
+                        }
+                    }
+                    contents.push(GeminiReqContent { role, parts });
+                }
+                super::Role::Tool => {
+                    // Gemini: tool results → "user" role with functionResponse parts
+                    let fn_name = m.tool_name.clone().unwrap_or_else(|| "tool_result".into());
+                    contents.push(GeminiReqContent {
+                        role: "user".into(),
+                        parts: vec![GeminiReqPart {
+                            text: None,
+                            function_call: None,
+                            function_response: Some(GeminiFunctionResponsePart {
+                                name: fn_name,
+                                response: serde_json::json!({ "result": m.content }),
+                            }),
+                        }],
+                    });
+                }
+                _ => {
+                    let role = match m.role {
                         super::Role::Assistant => "model".into(),
-                        super::Role::Tool => "user".into(), // pas de role tool natif, on inline
-                        _ => other.as_str().into(),
+                        _ => m.role.as_str().into(),
                     };
                     contents.push(GeminiReqContent {
                         role,
                         parts: vec![GeminiReqPart {
                             text: Some(m.content.clone()),
+                            function_call: None,
+                            function_response: None,
                         }],
                     });
                 }

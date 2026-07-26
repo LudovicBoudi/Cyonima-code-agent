@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSessionsStore, type ToolCallItem } from "../store/sessions";
 import { NewSessionForm } from "../components/NewSessionForm";
 import { ModelLoadingScreen } from "../components/ModelLoadingScreen";
@@ -191,8 +191,8 @@ export function SessionsView() {
 
   return (
     <div className="flex flex-1 overflow-hidden">
-      {/* Bloc 1 — conversation : chatbox, raisonnement, réponses (75%) */}
-      <div className="flex w-3/4 flex-col overflow-hidden">
+      {/* Bloc 1 — conversation (50%) */}
+      <div className="flex w-1/2 flex-col overflow-hidden">
       <header className="flex items-center gap-2 border-b border-border px-4 py-2 text-xs text-muted">
         <span>ollama</span>
         <span>•</span>
@@ -202,7 +202,6 @@ export function SessionsView() {
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
-        {/* Message de bienvenue court (remplace le dump AGENTS.md system). */}
         <div className="mb-4 text-sm">
           <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-muted">
             <Bot size={12} />
@@ -214,24 +213,12 @@ export function SessionsView() {
         </div>
         {visibleMsgs.map((m, i) => {
           const meta = ROLE_META[m.role] ?? ROLE_META.user;
-          const isLastAssistant = m.role === "assistant" && i === visibleMsgs.length - 1;
           return (
             <div key={i} className="mb-4 text-sm">
               <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-muted">
                 {meta.icon}
                 {meta.label}
               </div>
-              {isLastAssistant && activeThinking && (
-                <details open className="mb-2">
-                  <summary className="flex cursor-pointer items-center gap-1.5 text-xs text-muted hover:text-fg">
-                    <Brain size={12} className="text-purple-400" />
-                    Raisonnement du modèle
-                  </summary>
-                  <div className="mt-1 rounded border border-purple-500/20 bg-purple-500/5 px-3 py-2 text-xs text-muted whitespace-pre-wrap max-h-60 overflow-y-auto">
-                    {activeThinking}
-                  </div>
-                </details>
-              )}
               {m.role === "assistant" ? (
                 <div className="prose prose-invert prose-sm max-w-none prose-pre:bg-surface prose-pre:border prose-pre:border-border prose-code:text-accent">
                   <Markdown rehypePlugins={[rehypeHighlight]}>
@@ -244,25 +231,6 @@ export function SessionsView() {
             </div>
           );
         })}
-        {/* Affichage du thinking en temps réel */}
-        {isStreaming && activeThinking && (
-          <div className="mb-4 text-sm">
-            <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-muted">
-              <Bot size={12} />
-              Assistant
-            </div>
-            <details open className="mb-2">
-              <summary className="flex cursor-pointer items-center gap-1.5 text-xs text-muted hover:text-fg">
-                <Brain size={12} className="animate-pulse text-purple-400" />
-                Raisonnement en cours...
-              </summary>
-              <div className="mt-1 rounded border border-purple-500/20 bg-purple-500/5 px-3 py-2 text-xs text-muted whitespace-pre-wrap max-h-60 overflow-y-auto">
-                {activeThinking}
-              </div>
-            </details>
-          </div>
-        )}
-        {/* Animation générique pendant le streaming sans thinking visible */}
         {isStreaming && !activeThinking && (visibleMsgs.length === 0 || visibleMsgs[visibleMsgs.length - 1]?.role !== "assistant") && (
           <div className="mb-4 flex items-center gap-2 text-xs text-muted">
             <Loader2 size={14} className="animate-spin text-accent" />
@@ -280,7 +248,6 @@ export function SessionsView() {
       </div>
 
       <div className="border-t border-border p-3">
-        {/* Barre de contrôles : modèle · raisonnement · usage de contexte */}
         <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
           {hasModels ? (
             <select
@@ -391,9 +358,61 @@ export function SessionsView() {
       </div>
       </div>
 
-      {/* Bloc 2 — fichiers du workspace (git) */}
+      {/* Bloc 2 — raisonnement (25%) */}
+      <ThinkingPanel thinking={activeThinking} isStreaming={isStreaming} />
+
+      {/* Bloc 3 — fichiers du workspace (25%) */}
       <FileChangesPanel workspace={active.workspace} isStreaming={isStreaming} />
     </div>
+  );
+}
+
+/// Panneau latéral affichant le raisonnement (thinking) du modèle en temps réel.
+function ThinkingPanel({
+  thinking,
+  isStreaming,
+}: {
+  thinking: string;
+  isStreaming: boolean;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll pendant le streaming.
+  useEffect(() => {
+    if (isStreaming && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [thinking, isStreaming]);
+
+  return (
+    <aside className="flex w-1/4 shrink-0 flex-col overflow-hidden border-l border-border bg-bg">
+      <div className="flex items-center gap-2 border-b border-border px-3 py-2 text-xs">
+        <Brain size={14} className="text-purple-400" />
+        <span className="font-semibold text-fg">Raisonnement</span>
+        {isStreaming && thinking && (
+          <Loader2 size={12} className="ml-auto animate-spin text-purple-400" />
+        )}
+      </div>
+
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-2 text-xs">
+        {!thinking && !isStreaming && (
+          <p className="px-1 py-2 text-muted">
+            Le raisonnement du modèle apparaîtra ici pendant la génération.
+          </p>
+        )}
+        {!thinking && isStreaming && (
+          <div className="flex items-center gap-2 px-1 py-2 text-muted">
+            <Brain size={12} className="animate-pulse text-purple-400" />
+            <span>En train de réfléchir…</span>
+          </div>
+        )}
+        {thinking && (
+          <div className="whitespace-pre-wrap text-fg/80">
+            {thinking}
+          </div>
+        )}
+      </div>
+    </aside>
   );
 }
 

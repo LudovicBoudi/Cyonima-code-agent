@@ -19,7 +19,7 @@
 pub mod agents_md;
 pub mod persistence;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -38,6 +38,39 @@ use crate::tools::ToolRegistry;
 /// Nombre maximum d'itérations tool-call → tool-result par envoi utilisateur.
 /// Au-delà, on coupe et on termine la session avec un message d'erreur.
 const MAX_TOOL_ITERATIONS: usize = 32;
+
+/// Système prompt builtin injecté en premier dans chaque session. Interdit
+/// explicitement les chemins absolus et sorties du workspace.
+const SYSTEM_PROMPT_BUILTIN: &str = "\
+Tu es un assistant IA spécialisé en développement logiciel. Tu travailles dans le répertoire projet (workspace) qui t'a été assigné.
+
+## Mode de fonctionnement
+
+Tu es un agent autonome. Quand on te donne une tâche, TU la réalises directement avec les outils mis à disposition. Ne demande JAMAIS la permission au'utilisateur pour utiliser tes outils — c'est ton rôle de les utiliser.
+
+## Workspace
+
+- Tu travailles dans le workspace assigné. Les opérations hors workspace sont automatiquement rejetées par le système.
+- Un snapshot du workspace (arborescence + fichiers config) t'est fourni dans le contexte. Consulte-le pour comprendre le projet avant d'agir.
+- Tu peux utiliser des chemins absolus ou relatifs, tant qu'ils restent dans le workspace.
+- Les sous-répertoires sont créés automatiquement quand tu écris un fichier dedans.
+
+## Outils disponibles
+
+- `write_file(path, content)` : crée ou écrase un fichier. Les sous-dossiers sont créés automatiquement.
+- `edit_file(path, old_string, new_string)` : modifie un fragment précis dans un fichier existant.
+- `read_file(path)` : lis le contenu d'un fichier.
+- `glob(pattern)` : recherche de fichiers par pattern.
+- `grep(pattern, include)` : recherche de contenu par regex dans les fichiers.
+- `bash(command)` : exécute une commande shell. Nécessite l'approbation de l'utilisateur.
+- `semantic_search(query)` : recherche sémantique dans le code indexé.
+
+## Consignes
+
+- Quand on te donne une tâche, passe à l'action immédiatement. Lis les fichiers nécessaires, puis édite/crée-les.
+- Ne demandez pas de confirmation pour lire ou écrire des fichiers — c'est automatiquement autorisé.
+- Utilise `bash` uniquement pour les commandes système (git, cargo, npm, etc.) — l'utilisateur devra approuver.
+";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -192,13 +225,33 @@ impl SessionManager {
             });
             let abs_workspace = canonicalize_workspace(&info.workspace);
             let mut messages: Vec<ChatMessage> = Vec::new();
+            // Système prompt builtin (règles workspace) — TOUJOURS en tête.
+            messages.push(ChatMessage {
+                role: Role::System,
+                content: SYSTEM_PROMPT_BUILTIN.to_string(),
+                tool_call_id: None,
+                tool_name: None,
+                tool_calls: None,
+            });
             // AGENTS.md en tête (reloadé — il peut avoir changé entre temps).
             if let Some(agents_content) = agents_md::load(&abs_workspace) {
                 messages.push(ChatMessage {
                     role: Role::System,
                     content: agents_content,
+                    tool_call_id: None,
+                    tool_name: None,
+                    tool_calls: None,
                 });
             }
+            // Snapshot du workspace (re-généré à chaque restauration).
+            let snapshot = build_workspace_snapshot(&abs_workspace);
+            messages.push(ChatMessage {
+                role: Role::System,
+                content: snapshot,
+                tool_call_id: None,
+                tool_name: None,
+                tool_calls: None,
+            });
             // Suit les messages persisté (user/assistant/tool — pas l'AGENTS.md).
             let persisted = p.load_messages(&info.id).await?;
             messages.extend(persisted);
@@ -237,6 +290,15 @@ impl SessionManager {
         let abs_workspace = canonicalize_workspace(&workspace);
         let mut initial_messages: Vec<ChatMessage> = Vec::new();
 
+        // Système prompt builtin (règles workspace + outils) — TOUJOURS présent.
+        initial_messages.push(ChatMessage {
+            role: Role::System,
+            content: SYSTEM_PROMPT_BUILTIN.to_string(),
+            tool_call_id: None,
+            tool_name: None,
+            tool_calls: None,
+        });
+
         // AGENTS.md injecté comme system prompt s'il existe. NON persisté
         // en DB : il est rechargé à chaque `restore_all`, ce qui permet de
         // le modifier sans casser l'historique.
@@ -244,8 +306,23 @@ impl SessionManager {
             initial_messages.push(ChatMessage {
                 role: Role::System,
                 content: agents_content,
+                tool_call_id: None,
+                tool_name: None,
+                tool_calls: None,
             });
         }
+
+        // Snapshot du workspace : arborescence + fichiers config clés.
+        // Injecté comme system message pour que le LLM connaisse le projet
+        // dès le premier échange, sans avoir à appeler d'outils.
+        let snapshot = build_workspace_snapshot(&abs_workspace);
+        initial_messages.push(ChatMessage {
+            role: Role::System,
+            content: snapshot,
+            tool_call_id: None,
+            tool_name: None,
+            tool_calls: None,
+        });
 
         if let Some(p) = &self.persistence {
             // On ne peut propager l'erreur sans casser l'API sync IPC. On log
@@ -390,6 +467,9 @@ impl SessionManager {
         let user_msg = ChatMessage {
             role: Role::User,
             content: message.clone(),
+            tool_call_id: None,
+            tool_name: None,
+            tool_calls: None,
         };
         {
             let mut msgs = session.messages.lock().await;
@@ -465,8 +545,6 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
 
     let mut final_assistant = String::new();
     let mut final_usage = providers::Usage::default();
-    let mut errored = false;
-
     for iteration in 0..=MAX_TOOL_ITERATIONS {
         if cancel.is_cancelled() {
             tracing::info!("Agent loop annulée pour session {}", session_id);
@@ -581,7 +659,6 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
                     }
 
                     had_error = true;
-                    errored = true;
                     let _ = app.emit(
                         "session:error",
                         ErrorEvent {
@@ -598,10 +675,27 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
 
         // Persiste le message assistant (même si tool-call-only, certains LLM
         // mettent du contenu texte dans le même message).
-        if !assistant_buffer.is_empty() {
+        if !assistant_buffer.is_empty() || !tool_calls.is_empty() {
+            let tool_call_infos: Option<Vec<providers::ToolCallInfo>> = if tool_calls.is_empty() {
+                None
+            } else {
+                Some(
+                    tool_calls
+                        .iter()
+                        .map(|tc| providers::ToolCallInfo {
+                            id: tc.id.clone(),
+                            tool: tc.tool.clone(),
+                            arguments: tc.arguments.clone(),
+                        })
+                        .collect(),
+                )
+            };
             let assistant_msg = ChatMessage {
                 role: Role::Assistant,
                 content: assistant_buffer.clone(),
+                tool_call_id: None,
+                tool_name: None,
+                tool_calls: tool_call_infos,
             };
             session.messages.lock().await.push(assistant_msg.clone());
             final_assistant = assistant_buffer.clone();
@@ -650,6 +744,9 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
                 let tool_msg = ChatMessage {
                     role: Role::Tool,
                     content: format!("Outil `{}` refusé par l'utilisateur.", tc.tool),
+                    tool_call_id: Some(tc.id.clone()),
+                    tool_name: Some(tc.tool.clone()),
+                    tool_calls: None,
                 };
                 session.messages.lock().await.push(tool_msg.clone());
                 if let Some(p) = &session.persistence {
@@ -682,6 +779,9 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
             let tool_msg = ChatMessage {
                 role: Role::Tool,
                 content: output.output.clone(),
+                tool_call_id: Some(tc.id.clone()),
+                tool_name: Some(tc.tool.clone()),
+                tool_calls: None,
             };
             session.messages.lock().await.push(tool_msg.clone());
             if let Some(p) = &session.persistence {
@@ -701,23 +801,96 @@ async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionI
         tracing::info!("Session {} libérée (busy=false)", session_id);
     }
 
-    if !errored && !cancel.is_cancelled() {
-        tracing::info!("Émission de session:done pour session {}", session_id);
-        let _ = app.emit(
-            "session:done",
-            DoneEvent {
-                session_id: session_id.clone(),
-                usage: final_usage,
-                assistant_message: final_assistant,
-            },
-        );
-    } else {
-        tracing::warn!(
-            "Agent loop terminé avec erreur ou annulation pour session {}",
-            session_id
-        );
-    }
+    tracing::info!("Émission de session:done pour session {}", session_id);
+    let _ = app.emit(
+        "session:done",
+        DoneEvent {
+            session_id: session_id.clone(),
+            usage: final_usage,
+            assistant_message: final_assistant,
+        },
+    );
     tracing::info!("=== FIN agent_loop pour session {} ===", session_id);
+}
+
+/// Construit un snapshot du workspace pour injecter le contexte initial au LLM.
+/// Liste l'arborescence (depth 2) et lit les fichiers config clés.
+fn build_workspace_snapshot(workspace: &Path) -> String {
+    let mut out = String::from("## Workspace — Vue d'ensemble\n\n");
+
+    // 1. Arborescence (depth 2, ignore .git/target/node_modules)
+    out.push_str("### Structure\n```\n");
+    let _ = walk_tree(workspace, &mut out, 0, 2);
+    out.push_str("```\n\n");
+
+    // 2. Fichiers config clés
+    let config_files = [
+        "Cargo.toml",
+        "package.json",
+        "tsconfig.json",
+        "pyproject.toml",
+        "go.mod",
+        "Makefile",
+        "README.md",
+        "AGENTS.md",
+    ];
+    let mut found_config = false;
+    for name in &config_files {
+        let path = workspace.join(name);
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if !found_config {
+                out.push_str("### Fichiers de configuration\n");
+                found_config = true;
+            }
+            let truncated = if content.len() > 2000 {
+                format!("{}… (tronqué)", &content[..2000])
+            } else {
+                content
+            };
+            out.push_str(&format!("\n**{name}**:\n```\n{truncated}\n```\n"));
+        }
+    }
+
+    out
+}
+
+/// Parcourt récursivement un dossier pour l'arborescence. Ignore les dossiers
+/// cachés et les/node_modules/target. Renvoie Ok(()) en cas de succès partiel.
+fn walk_tree(
+    dir: &Path,
+    out: &mut String,
+    depth: usize,
+    max_depth: usize,
+) -> std::io::Result<()> {
+    if depth >= max_depth {
+        return Ok(());
+    }
+    let indent = "  ".repeat(depth);
+    let entries = std::fs::read_dir(dir)?;
+    let mut items: Vec<_> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            let name = e.file_name();
+            let name_str = name.to_string_lossy();
+            // Ignore .git, target, node_modules, __pycache__, .DS_Store
+            !name_str.starts_with('.')
+                && name_str != "target"
+                && name_str != "node_modules"
+                && name_str != "__pycache__"
+        })
+        .collect();
+    items.sort_by_key(|e| e.file_name());
+    for entry in items {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if entry.path().is_dir() {
+            out.push_str(&format!("{indent}{name_str}/\n"));
+            let _ = walk_tree(&entry.path(), out, depth + 1, max_depth);
+        } else {
+            out.push_str(&format!("{indent}{name_str}\n"));
+        }
+    }
+    Ok(())
 }
 
 /// Canonise le chemin workspace en absolu. En cas d'échec (workspace relatif

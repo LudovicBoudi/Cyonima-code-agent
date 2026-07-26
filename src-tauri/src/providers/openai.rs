@@ -56,6 +56,24 @@ struct OpenAiChatRequest {
 struct OpenAiMessage {
     role: String,
     content: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    tool_call_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    tool_calls: Option<Vec<OpenAiToolCallMsg>>,
+}
+
+#[derive(Debug, Serialize)]
+struct OpenAiToolCallMsg {
+    id: String,
+    #[serde(rename = "type")]
+    kind: String,
+    function: OpenAiToolCallFn,
+}
+
+#[derive(Debug, Serialize)]
+struct OpenAiToolCallFn {
+    name: String,
+    arguments: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -142,6 +160,20 @@ impl Provider for OpenAiProvider {
                 .map(|m| OpenAiMessage {
                     role: m.role.as_str().into(),
                     content: m.content.clone(),
+                    tool_call_id: m.tool_call_id.clone(),
+                    tool_calls: m.tool_calls.as_ref().map(|tcs| {
+                        tcs.iter()
+                            .map(|tc| OpenAiToolCallMsg {
+                                id: tc.id.clone(),
+                                kind: "function".into(),
+                                function: OpenAiToolCallFn {
+                                    name: tc.tool.clone(),
+                                    arguments: serde_json::to_string(&tc.arguments)
+                                        .unwrap_or_default(),
+                                },
+                            })
+                            .collect()
+                    }),
                 })
                 .collect(),
             stream: true,

@@ -59,6 +59,24 @@ struct CompatChatRequest {
 struct CompatMessage {
     role: String,
     content: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    tool_call_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    tool_calls: Option<Vec<CompatToolCallMsg>>,
+}
+
+#[derive(Debug, Serialize)]
+struct CompatToolCallMsg {
+    id: String,
+    #[serde(rename = "type")]
+    kind: String,
+    function: CompatToolCallFn,
+}
+
+#[derive(Debug, Serialize)]
+struct CompatToolCallFn {
+    name: String,
+    arguments: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -147,6 +165,20 @@ impl Provider for OpenAiCompatProvider {
                 .map(|m| CompatMessage {
                     role: m.role.as_str().into(),
                     content: m.content.clone(),
+                    tool_call_id: m.tool_call_id.clone(),
+                    tool_calls: m.tool_calls.as_ref().map(|tcs| {
+                        tcs.iter()
+                            .map(|tc| CompatToolCallMsg {
+                                id: tc.id.clone(),
+                                kind: "function".into(),
+                                function: CompatToolCallFn {
+                                    name: tc.tool.clone(),
+                                    arguments: serde_json::to_string(&tc.arguments)
+                                        .unwrap_or_default(),
+                                },
+                            })
+                            .collect()
+                    }),
                 })
                 .collect(),
             stream: true,

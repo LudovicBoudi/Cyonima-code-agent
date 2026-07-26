@@ -38,17 +38,21 @@ pub enum Policy {
     Deny,
 }
 
-/// Defaults prudents : l'écriture et le shell demandent confirmation à
-/// chaque fois ; la lecture / la recherche sont en auto-approve.
+/// Defaults prudents : seules les commandes shell demandent confirmation.
+/// Les outils fichiers (lecture, écriture, recherche) sont auto-approuvés
+/// car ils sont sandboxés au workspace via `sandbox_resolve`.
 pub fn default_policy(tool: &str) -> Policy {
     match tool {
-        "read_file" | "glob" | "grep" => Policy::Auto,
-        "write_file" | "edit_file" | "bash" => Policy::Ask,
+        "read_file" | "write_file" | "edit_file" | "glob" | "grep" | "semantic_search" => {
+            Policy::Auto
+        }
+        "bash" => Policy::Ask,
         _ => Policy::Ask,
     }
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PermissionRequest {
     pub request_id: String,
     pub session_id: String,
@@ -140,7 +144,10 @@ impl Gateway {
     pub async fn respond(&self, request_id: &str, decision: Decision) {
         let removed = self.pending.lock().await.remove(request_id);
         if let Some(p) = removed {
+            tracing::info!("Permission {request_id} répondue: {decision:?}");
             let _ = p.tx.send(decision);
+        } else {
+            tracing::warn!("Permission {request_id} introuvable dans la map pending (réponse tardive ?)");
         }
     }
 }

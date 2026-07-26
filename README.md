@@ -107,7 +107,7 @@ Le menu déroulant du chat liste automatiquement les modèles présents dans Oll
 | **Workstation** | 32 Go | 12–16 Go | `qwen2.5-coder:32b`, `deepseek-r1:32b`, `gemma3:27b` |
 | **Serveur / GPU lourd** | 64+ Go | 24+ Go | `llama3.1:70b`, `qwen2.5:72b` |
 
-> **Règle simple** : si le modèle tient entièrement en VRAM GPU, la RAM CPU est très peu utilisée et l'inférence est 3–10× plus rapide. Le garde-fou Cyonima détecte automatiquement la VRAM et ajuste les seuils.
+> **Règle simple** : si le modèle tient entièrement en VRAM GPU, la RAM CPU est très peu utilisée et l'inférence est 3–10× plus rapide. Le garde-fou détecte automatiquement la VRAM et ajuste les seuils.
 
 ### Par cas d'usage
 
@@ -148,7 +148,7 @@ Le garde-fou est exposé en IPC : `hardware_get()` et `hardware_can_run_model(ra
 - [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) — schémas de l'application et des modules Rust
 - [`ROADMAP.md`](docs/ROADMAP.md) — jalons de développement
 - [`models-guide.md`](docs/models-guide.md) — quel modèle choisir selon la tâche (comparatif + repères)
-- [`AGENTS.md`](AGENTS.md) — instructions par défaut de l'agent Cyonima sur ce repo
+- [`AGENTS.md`](AGENTS.md) — instructions par défaut de l'agent sur ce repo
 - [`docs/models-catalog.toml`](docs/models-catalog.toml) — catalogue de tags Ollama suggérés
 
 ## Licence

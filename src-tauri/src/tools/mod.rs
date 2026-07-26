@@ -136,8 +136,7 @@ impl ToolRegistry {
 /// d'erreur prête à_logger.
 pub fn sandbox_resolve(workspace: &Path, target: &str) -> Result<PathBuf, String> {
     let target_path = Path::new(target);
-    let is_absolute = target_path.is_absolute();
-    let candidate = if is_absolute {
+    let candidate = if target_path.is_absolute() {
         PathBuf::from(target)
     } else {
         workspace.join(target)
@@ -156,8 +155,8 @@ pub fn sandbox_resolve(workspace: &Path, target: &str) -> Result<PathBuf, String
             let canonical_parent = parent.canonicalize();
             let Ok(canon_parent) = canonical_parent else {
                 return Err(format!(
-                    "chemin invalide (parent injoignable): {}",
-                    candidate.display()
+                    "chemin invalide (parent injoignable): `{}`",
+                    target
                 ));
             };
             let file_name = candidate
@@ -168,9 +167,9 @@ pub fn sandbox_resolve(workspace: &Path, target: &str) -> Result<PathBuf, String
     };
     if !canonical_candidate.starts_with(&canonical_workspace) {
         return Err(format!(
-            "chemin hors sandbox (workspace={} target={})",
-            canonical_workspace.display(),
-            canonical_candidate.display(),
+            "chemin hors workspace: `{}` est à l'extérieur du projet ({})",
+            target,
+            canonical_workspace.display()
         ));
     }
     Ok(canonical_candidate)

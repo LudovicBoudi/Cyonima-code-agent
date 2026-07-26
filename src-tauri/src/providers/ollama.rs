@@ -53,7 +53,7 @@ struct OllamaMessage {
     /// Outil invoqué par l'assistant — format Ollama.
     /// Présent sur les messages assistant contenant un tool call.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    tool_calls: Vec<OllamaToolCall>,
+    tool_calls: Vec<OllamaMessageToolCall>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -74,6 +74,15 @@ struct OllamaToolDef {
 struct OllamaToolCall {
     name: String,
     arguments: serde_json::Value,
+}
+
+/// Format tool_call dans les messages assistant (enrobage `function` requis
+/// par l'API Ollama / OpenAI-compatible).
+#[derive(Debug, Clone, Serialize)]
+struct OllamaMessageToolCall {
+    #[serde(rename = "type")]
+    kind: String,
+    function: OllamaToolCall,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -294,8 +303,22 @@ impl Provider for OllamaProvider {
                 role: m.role.as_str().into(),
                 content: m.content.clone(),
                 images: Vec::new(),
-                tool_call_id: None,
-                tool_calls: Vec::new(),
+                tool_call_id: m.tool_call_id.clone(),
+                tool_calls: m
+                    .tool_calls
+                    .as_ref()
+                    .map(|tcs| {
+                        tcs.iter()
+                            .map(|tc| OllamaMessageToolCall {
+                                kind: "function".into(),
+                                function: OllamaToolCall {
+                                    name: tc.tool.clone(),
+                                    arguments: tc.arguments.clone(),
+                                },
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
             })
             .collect();
 

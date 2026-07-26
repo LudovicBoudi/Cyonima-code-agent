@@ -21,11 +21,11 @@ impl Tool for EditFile {
     fn spec(&self) -> ToolSpec {
         ToolSpec {
             name: "edit_file".into(),
-            description: "Remplace un fragment de texte exact dans un fichier. `old_string` doit apparaître exactement une fois.".into(),
+            description: "Remplace un fragment de texte exact dans un fichier. Le chemin doit rester dans le workspace.".into(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string" },
+                    "path": { "type": "string", "description": "Chemin du fichier (relatif ou absolu dans le workspace)" },
                     "old_string": { "type": "string", "description": "Texte à remplacer (doit être unique)" },
                     "new_string": { "type": "string", "description": "Remplaçant" }
                 },
