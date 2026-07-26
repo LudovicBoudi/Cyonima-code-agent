@@ -856,12 +856,7 @@ fn build_workspace_snapshot(workspace: &Path) -> String {
 
 /// Parcourt récursivement un dossier pour l'arborescence. Ignore les dossiers
 /// cachés et les/node_modules/target. Renvoie Ok(()) en cas de succès partiel.
-fn walk_tree(
-    dir: &Path,
-    out: &mut String,
-    depth: usize,
-    max_depth: usize,
-) -> std::io::Result<()> {
+fn walk_tree(dir: &Path, out: &mut String, depth: usize, max_depth: usize) -> std::io::Result<()> {
     if depth >= max_depth {
         return Ok(());
     }

@@ -147,7 +147,9 @@ impl Gateway {
             tracing::info!("Permission {request_id} répondue: {decision:?}");
             let _ = p.tx.send(decision);
         } else {
-            tracing::warn!("Permission {request_id} introuvable dans la map pending (réponse tardive ?)");
+            tracing::warn!(
+                "Permission {request_id} introuvable dans la map pending (réponse tardive ?)"
+            );
         }
     }
 }

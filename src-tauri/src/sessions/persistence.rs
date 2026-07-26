@@ -269,9 +269,8 @@ impl Persistence {
             let tool_call_id: Option<String> = r.try_get("tool_call_id")?;
             let tool_name: Option<String> = r.try_get("tool_name")?;
             let tool_calls_json: Option<String> = r.try_get("tool_calls_json")?;
-            let tool_calls = tool_calls_json.and_then(|json| {
-                serde_json::from_str::<Vec<ToolCallInfo>>(&json).ok()
-            });
+            let tool_calls = tool_calls_json
+                .and_then(|json| serde_json::from_str::<Vec<ToolCallInfo>>(&json).ok());
             let role = match role_str.as_str() {
                 "system" => Role::System,
                 "user" => Role::User,

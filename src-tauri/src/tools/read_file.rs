@@ -17,7 +17,9 @@ impl Tool for ReadFile {
     fn spec(&self) -> ToolSpec {
         ToolSpec {
             name: "read_file".into(),
-            description: "Lit le contenu d'un fichier du workspace. Le chemin doit rester dans le workspace.".into(),
+            description:
+                "Lit le contenu d'un fichier du workspace. Le chemin doit rester dans le workspace."
+                    .into(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
