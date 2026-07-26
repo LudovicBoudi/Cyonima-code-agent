@@ -82,6 +82,7 @@ pub fn run() {
             ipc::index_search,
             ipc::index_count,
             ipc::workspace_git_status,
+            ipc::file_revert,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de l'application Tauri");

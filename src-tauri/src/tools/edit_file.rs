@@ -75,7 +75,19 @@ impl Tool for EditFile {
         }
         let new_content = content.replacen(old_str, new_str, 1);
         match tokio::fs::write(&abs, &new_content).await {
-            Ok(_) => ToolOutput::ok("edit_file", format!("édité {}", abs.display())),
+            Ok(_) => {
+                // Sortie JSON structurée pour le diff viewer frontend.
+                let output = serde_json::json!({
+                    "message": format!("édité {}", abs.display()),
+                    "diff_info": {
+                        "path": path,
+                        "before": content,
+                        "after": new_content,
+                        "created": false,
+                    },
+                });
+                ToolOutput::ok("edit_file", output.to_string())
+            }
             Err(e) => ToolOutput::err(
                 "edit_file",
                 format!("échec écriture {}: {e}", abs.display()),

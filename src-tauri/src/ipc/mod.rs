@@ -847,3 +847,16 @@ pub async fn index_count() -> Result<usize, String> {
         .await
         .map_err(|e| e.to_string())
 }
+
+// ===== File revert (diff viewer) =====
+
+/// Réécrit un fichier avec le contenu fourni (pour annuler un edit/write).
+/// Le chemin est sandboxé au workspace.
+#[tauri::command]
+pub async fn file_revert(workspace: String, path: String, content: String) -> Result<(), String> {
+    let abs = crate::tools::sandbox_resolve(std::path::Path::new(&workspace), &path)
+        .map_err(|e| e.to_string())?;
+    tokio::fs::write(&abs, &content)
+        .await
+        .map_err(|e| format!("échec réécriture {}: {e}", abs.display()))
+}

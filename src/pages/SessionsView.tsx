@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import Markdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
-import { DiffViewer } from "../components/DiffViewer";
+import { DiffViewer, type DiffInfo } from "../components/DiffViewer";
 import { ipc, type GitStatus, type GitFileStatus } from "../lib/ipc";
 
 const ROLE_META: Record<string, { label: string; icon: React.ReactNode }> = {
@@ -17,9 +17,25 @@ const ROLE_META: Record<string, { label: string; icon: React.ReactNode }> = {
   system: { label: "Système", icon: <Wrench size={12} /> },
 };
 
-function ToolCallBlock({ call }: { call: ToolCallItem }) {
+function parseDiffInfo(output: string): { message: string; diffInfo: DiffInfo | null } {
+  try {
+    const parsed = JSON.parse(output);
+    if (parsed.diff_info) {
+      return { message: parsed.message ?? "", diffInfo: parsed.diff_info };
+    }
+  } catch {
+    // Not JSON — plain text output
+  }
+  return { message: output, diffInfo: null };
+}
+
+function ToolCallBlock({ call, workspace }: { call: ToolCallItem; workspace: string }) {
   const pending = !call.result && !call.denied;
   const denied = call.denied || (call.result?.isError && call.result.output.includes("Refusé"));
+  const hasDiff = (call.tool === "write_file" || call.tool === "edit_file") && call.result && !call.result.isError;
+  const { message: displayOutput, diffInfo } = hasDiff
+    ? parseDiffInfo(call.result!.output)
+    : { message: call.result?.output ?? "", diffInfo: null };
   return (
     <div
       className={`mb-3 rounded border px-3 py-2 text-xs ${
@@ -53,11 +69,11 @@ function ToolCallBlock({ call }: { call: ToolCallItem }) {
           <div className="mb-1 text-[10px] uppercase tracking-wider text-muted">
             Résultat {call.result.isError ? "(erreur)" : ""}
           </div>
-          {call.tool === "edit_file" && !call.result.isError ? (
-            <DiffViewer content={call.result.output} />
+          {diffInfo ? (
+            <DiffViewer diffInfo={diffInfo} workspace={workspace} />
           ) : (
             <pre className="max-h-60 overflow-y-auto whitespace-pre-wrap font-mono text-xs">
-              {call.result.output}
+              {displayOutput}
             </pre>
           )}
         </div>
@@ -238,7 +254,7 @@ export function SessionsView() {
           </div>
         )}
         {calls.map((c) => (
-          <ToolCallBlock key={c.callId} call={c} />
+          <ToolCallBlock key={c.callId} call={c} workspace={active.workspace} />
         ))}
         {error && (
           <div className="mb-4 rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">

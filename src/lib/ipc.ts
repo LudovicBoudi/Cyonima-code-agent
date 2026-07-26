@@ -199,6 +199,9 @@ export const ipc = {
 
   workspaceGitStatus: (p: { workspace: string }) =>
     invoke<GitStatus>("workspace_git_status", p),
+
+  fileRevert: (p: { workspace: string; path: string; content: string }) =>
+    invoke<void>("file_revert", p),
 };
 
 // ===== Events helpers =====
