@@ -229,6 +229,7 @@ pub async fn permission_respond(
         "deny" => Decision::Deny,
         other => return Err(format!("decision invalide: {other} (attendu: allow|deny)")),
     };
+    tracing::info!("IPC permission_respond reçu: request_id={request_id} decision={decision:?}");
     state.gateway.respond(&request_id, decision).await;
     Ok(())
 }
@@ -494,6 +495,42 @@ pub async fn ollama_pull_model(
         }
     });
 
+    Ok(())
+}
+
+/// Supprime un modèle Ollama (`DELETE /api/delete`).
+#[tauri::command]
+pub async fn ollama_delete_model(state: State<'_, AppState>, model: String) -> Result<(), String> {
+    let endpoint = state
+        .config
+        .get()
+        .await
+        .provider
+        .ollama_endpoint
+        .unwrap_or_else(|| DEFAULT_OLLAMA_ENDPOINT.to_string());
+    let endpoint = endpoint.trim_end_matches('/').to_string();
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("Erreur client HTTP: {e}"))?;
+
+    let url = format!("{}/api/delete", endpoint);
+    let body = serde_json::json!({ "name": model });
+
+    let resp = client
+        .delete(&url)
+        .header("Content-Type", "application/json")
+        .body(body.to_string())
+        .send()
+        .await
+        .map_err(|e| format!("Erreur suppression Ollama: {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("Ollama a retourné {status}: {text}"));
+    }
     Ok(())
 }
 

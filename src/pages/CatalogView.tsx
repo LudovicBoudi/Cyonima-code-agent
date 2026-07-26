@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ipc, type ModelInfo, type HardwareInfo } from "../lib/ipc";
 import { useDownloadsStore } from "../store/downloads";
-import { Download } from "lucide-react";
+import { Download, Trash2 } from "lucide-react";
 
 /// Progression d'un pull Ollama, dérivée du flux JSON de `/api/pull`.
 type OllamaPullProgress = {
@@ -298,7 +298,25 @@ function Row({
 
   const renderAction = () => {
     if (m.installed) {
-      return <span className="text-muted">—</span>;
+      return (
+        <button
+          onClick={async () => {
+            if (!confirm(`Désinstaller le modèle "${m.name}" (${m.ollamaTag ?? m.id}) ?`)) return;
+            try {
+              const tagName = m.ollamaTag ?? m.id;
+              await ipc.ollamaDeleteModel({ model: tagName });
+              onInstalled();
+            } catch (e) {
+              alert("Erreur suppression: " + e);
+            }
+          }}
+          className="flex items-center gap-1 rounded border border-red-500/40 px-2 py-1 text-xs text-red-300 hover:bg-red-500/10"
+          title="Désinstaller ce modèle"
+        >
+          <Trash2 size={12} />
+          Désinstaller
+        </button>
+      );
     }
     if (download?.error) {
       return (

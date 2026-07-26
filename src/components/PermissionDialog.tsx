@@ -1,41 +1,16 @@
-import { useEffect, useState } from "react";
 import { ShieldCheck, ShieldAlert } from "lucide-react";
-import { ipc, onPermissionRequest, type PermissionRequestEvent } from "../lib/ipc";
+import { ipc, type PermissionRequestEvent } from "../lib/ipc";
 import { useSessionsStore } from "../store/sessions";
-
-interface PendingDialog {
-  request: PermissionRequestEvent;
-  /// Approuvé/dénié localement en attendant la réponse du backend (sinon
-  /// l'utilisateur pourrait cliquer deux fois).
-  decided: boolean;
-}
+import { usePermissionsStore } from "../store/permissions";
 
 export function PermissionDialog() {
-  const [queue, setQueue] = useState<PendingDialog[]>([]);
-  const addToolCall = useSessionsStore((s) => s.addToolCall);
+  const queue = usePermissionsStore((s) => s.queue);
+  const markDecided = usePermissionsStore((s) => s.markDecided);
+  const remove = usePermissionsStore((s) => s.remove);
   const setToolResult = useSessionsStore((s) => s.setToolResult);
 
-  useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    (async () => {
-      unlisten = await onPermissionRequest((req) => {
-        setQueue((q) => [...q, { request: req, decided: false }]);
-        // On ajoute aussi un tool call en attente dans le store pour que
-        // l'utilisateur voie le "pending" inline dans le chat.
-        addToolCall(req.sessionId, {
-          callId: req.requestId,
-          tool: req.tool,
-          arguments: req.arguments,
-        });
-      });
-    })();
-    return () => {
-      if (unlisten) unlisten();
-    };
-  }, [addToolCall]);
-
   const respond = async (req: PermissionRequestEvent, decision: "allow" | "deny") => {
-    setQueue((q) => q.map((p) => (p.request.requestId === req.requestId ? { ...p, decided: true } : p)));
+    markDecided(req.requestId);
     try {
       await ipc.permissionRespond({ requestId: req.requestId, decision });
       if (decision === "deny") {
@@ -44,10 +19,7 @@ export function PermissionDialog() {
     } catch (e) {
       console.error("permission_respond error", e);
     }
-    // On retire de la file après l'animation (50ms suffit pour le rendu).
-    setTimeout(() => {
-      setQueue((q) => q.filter((p) => p.request.requestId !== req.requestId));
-    }, 50);
+    setTimeout(() => remove(req.requestId), 50);
   };
 
   if (queue.length === 0) return null;

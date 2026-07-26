@@ -69,6 +69,7 @@ pub fn run() {
             ipc::provider_list_configured,
             ipc::ollama_list_models,
             ipc::ollama_pull_model,
+            ipc::ollama_delete_model,
             ipc::ollama_model_info,
             ipc::config_get,
             ipc::config_get_workspace,

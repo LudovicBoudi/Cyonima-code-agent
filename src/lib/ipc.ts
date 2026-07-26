@@ -168,6 +168,8 @@ export const ipc = {
     invoke<OllamaModelInfo[]>("ollama_list_models"),
   ollamaPullModel: (p: { model: string }) =>
     invoke<void>("ollama_pull_model", p),
+  ollamaDeleteModel: (p: { model: string }) =>
+    invoke<void>("ollama_delete_model", p),
   ollamaModelInfo: (p: { model: string }) =>
     invoke<OllamaModelDetails>("ollama_model_info", p),
 

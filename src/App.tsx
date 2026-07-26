@@ -19,11 +19,13 @@ import {
   onSessionToolResult,
   onSessionThinking,
   onSessionModelLoading,
+  onPermissionRequest,
   onDownloadProgress,
   onDownloadDone,
   onDownloadError,
 } from "./lib/ipc";
 import { useKeyboardShortcuts, registerShortcut } from "./lib/shortcuts";
+import { usePermissionsStore } from "./store/permissions";
 
 type View = "sessions" | "catalog" | "import" | "settings" | "ollama" | "config" | "search";
 
@@ -47,6 +49,7 @@ export default function App() {
   const setProgress = useDownloadsStore((s) => s.setProgress);
   const markDownloadDone = useDownloadsStore((s) => s.markDone);
   const markDownloadError = useDownloadsStore((s) => s.markError);
+  const enqueuePermission = usePermissionsStore((s) => s.enqueue);
 
   // Au démarrage : recharge les sessions persistées en SQLite + la liste des
   // modèles Ollama installés (source du menu déroulant du chat).
@@ -120,6 +123,16 @@ export default function App() {
           markDownloadError(e.modelId, e.error);
         }),
       );
+      track(
+        await onPermissionRequest((req) => {
+          enqueuePermission(req);
+          addToolCall(req.sessionId, {
+            callId: req.requestId,
+            tool: req.tool,
+            arguments: req.arguments,
+          });
+        }),
+      );
     })();
     return () => {
       disposed = true;
@@ -138,6 +151,7 @@ export default function App() {
     setProgress,
     markDownloadDone,
     markDownloadError,
+    enqueuePermission,
   ]);
 
   useEffect(() => {

@@ -157,7 +157,16 @@ Les jalons sont prévus pour être livrés dans l'ordre. Chacun a des critères 
 - 3 tests Rust : default config, set/get provider, merge workspace  ✅
 - **DoD** : un workspace peut choisir son modèle + ses permissions propres.  ✅
 
-## J10 — Polissage UI
+## J10 — Polissage UI ✅ (partiel)
+- ThinkingPanel colonne centrale (25%) avec auto-scroll et streaming indicators  ✅
+- Vue session en 3 colonnes (50% chat / 25% reasoning / 25% fichiers)  ✅
+- Suppression de modèles depuis le catalogue (bouton « Désinstaller »)  ✅
+- System prompt agent autonome (outils file auto-approuvés, bash demande approbation)  ✅
+- Workspace snapshot injecté au contexte LLM à chaque session  ✅
+- `session:done` toujours émis (même erreur/annulation) — fix frontend stuck  ✅
+- `PermissionRequest` serde fix (`rename_all = "camelCase"`) — dialogue de permission fonctionnel  ✅
+- `write_file`, `edit_file`, `glob`, `grep` → auto-approve (seul `bash` reste Ask)  ✅
+- Logging des permissions pour diagnostic  ✅
 - Diff viewer + apply/reject
 - Syntax highlight (shiki)
 - Thèmes (clair/sombre/contrasté)
@@ -175,8 +184,8 @@ Les jalons sont prévus pour être livrés dans l'ordre. Chacun a des critères 
   `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` pour la notarization ; Windows :
   à câbler via Azure Trusted Signing dans `tauri.conf.json`). Sans secrets, les
   installateurs sont produits **non signés** (fonctionnels).
-- **Changelog** : `CHANGELOG.md` (Keep a Changelog / SemVer), entrée v1.0.0.
-- **Version** : `1.0.0` (package.json, Cargo.toml, tauri.conf.json, status bar).
+- **Changelog** : `CHANGELOG.md` (Keep a Changelog / SemVer), entrée v1.0.0 + v1.1.0.
+- **Version** : `1.1.0` (package.json, Cargo.toml, tauri.conf.json, status bar).
 - **DoD** : release publique v1.0.0 sur les 3 OS.
   - Reste à faire côté mainteneur : fournir les certificats de signature (secrets),
     pousser le tag `v1.0.0` pour déclencher le build, relire puis publier le brouillon

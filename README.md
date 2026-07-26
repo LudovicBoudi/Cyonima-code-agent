@@ -1,5 +1,7 @@
 # Cyonima-ia-code-agent
 
+![Cyonima-ia-code-agent](image.png)
+
 > Agent IA de code **100% local, gratuit et open source** pour Windows, macOS et Linux.
 > Multi-session, propulsé par [Ollama](https://ollama.com). Inspiré d'[Opencode](https://opencode.ai/go?ref=ZB69DAJS6H) et de [Kiro IDE](https://kiro.dev).
 
@@ -12,6 +14,8 @@ Cyonima-ia-code-agent est l'inverse :
 - **Open source (MIT)** : code et catalogue tous ouverts.
 - **Vraiment local** : l'inférence tourne sur votre machine via [Ollama](https://ollama.com). Rien ne sort de votre poste.
 - **Multi-session parallèle** : lancez plusieurs agents concurrents sur le même projet, chacun avec son propre modèle, son propre contexte et ses propres outils — à la Opencode.
+- **Agent autonome** : l'agent lit, écrit et exécute des commandes de manière autonome (outils auto-approuvés pour la lecture/écriture de fichiers). Seules les commandes `bash` dangereuses demandent une approbation.
+- **Snapshot workspace** : à chaque session, l'agent reçoit un aperçu automatique du projet (fichiers clés, structure) pour comprendre le contexte immédiatement sans outils supplémentaires.
 - **Zéro gros fichier dans le repo** : les modèles sont gérés par Ollama (`ollama pull`), jamais committés dans Git.
 
 ## Stack technique
@@ -72,13 +76,14 @@ npm run tauri build
 
 ## Interface
 
-Thème **violet** unique (sombre). La vue session est organisée en **deux colonnes** :
+Thème **violet** unique (sombre). La vue session est organisée en **3 colonnes** :
 
-- **Gauche (75%)** — la conversation : raisonnement du modèle (bloc repliable), réponses, appels d'outils, puis la **chatbox**. La chatbox propose :
+- **Gauche (50%)** — la conversation : réponses, appels d'outils (avec résultat repliable), puis la **chatbox**. La chatbox propose :
   - le **sélecteur de modèle** (modèles Ollama installés) ;
   - un menu d'**intensité de raisonnement** (Auto / Désactivé / Faible / Moyen / Élevé) pour les modèles « thinking » ;
   - un **indicateur d'usage de contexte** (tokens du dernier tour vs taille de contexte du modèle) ;
   - les boutons **Play / Stop** pour envoyer ou interrompre.
+- **Centre (25%)** — le **panneau de raisonnement** : flux de tokens « thinking » du modèle en temps réel, avec auto-scroll et indicateur de streaming.
 - **Droite (25%)** — les **fichiers modifiés** du workspace (ajoutés / modifiés / supprimés / renommés), via `git status`. Les répertoires de travail sont supposés être des dépôts git.
 
 ---
@@ -87,7 +92,7 @@ Thème **violet** unique (sombre). La vue session est organisée en **deux colon
 
 Tous les modèles passent par Ollama :
 
-- **Onglet Ollama** de l'app : voir les modèles installés, lancer un `pull` avec suivi de progression.
+- **Onglet Ollama** de l'app : voir les modèles installés, lancer un `pull` avec suivi de progression, ou **supprimer** un modèle (`DELETE /api/delete`).
 - **CLI** : `ollama pull <tag>` (ex: `ollama pull deepseek-r1:14b`).
 
 Le menu déroulant du chat liste automatiquement les modèles présents dans Ollama. Un garde-fou hardware (RAM / VRAM) vous indique si un modèle est adapté à votre machine.
@@ -120,7 +125,7 @@ Le menu déroulant du chat liste automatiquement les modèles présents dans Oll
 | **Généraliste équilibré** | `gemma3:12b` ou `qwen2.5:14b` | Bon compromis qualité / vitesse. |
 | **Multilingue** | `qwen2.5:14b` | Fort en anglais, chinois et langues secondaires. |
 
-> Les modèles « thinking » (DeepSeek-R1, Qwen3…) affichent leur raisonnement dans un bloc « Raisonnement du modèle » repliable, séparé de la réponse finale. L'application active automatiquement le mode thinking uniquement pour les modèles qui le supportent.
+> Les modèles « thinking » (DeepSeek-R1, Qwen3, Gemma 4…) affichent leur raisonnement dans la **colonne centrale** dédiée, en temps réel. L'application active automatiquement le mode thinking pour les modèles qui le supportent.
 
 ---
 

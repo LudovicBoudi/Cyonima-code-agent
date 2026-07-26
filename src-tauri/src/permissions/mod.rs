@@ -131,6 +131,11 @@ impl Gateway {
                         },
                     );
                 }
+                tracing::info!(
+                    "Permission request {} enregistrée pour outil '{}' — en attente de réponse UI",
+                    id,
+                    tool
+                );
                 let _ = app.emit("permission:request", &request);
                 let decision = rx.await.unwrap_or(Decision::Deny);
                 // Au cas où le frontend répondrait deux fois, on nettoie.

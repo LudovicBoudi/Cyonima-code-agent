@@ -4,6 +4,42 @@ Toutes les évolutions notables de Cyonima-ia-code-agent sont consignées ici.
 Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et le
 versionnage [SemVer](https://semver.org/lang/fr/).
 
+## [1.1.0] — 2026-07-25
+
+Agent autonome, panneau de raisonnement dédié et suppression de modèles.
+
+### Ajouté
+- **ThinkingPanel** : colonne centrale dédiée (25%) au flux de tokens « thinking »
+  du modèle, avec auto-scroll et indicateur de streaming. Layout session
+  passé de 2 à 3 colonnes (50% chat / 25% reasoning / 25% fichiers).
+- **Suppression de modèles** : bouton « Désinstaller » dans le catalogue avec
+  confirmation, appel `DELETE /api/delete` vers Ollama.
+- **Agent autonome** : `write_file`, `edit_file`, `glob`, `grep` sont
+  auto-approuvés (seul `bash` demande une approbation). System prompt réécrit
+  pour encourager l'action autonome.
+- **Workspace snapshot** : à chaque session, l'agent reçoit un aperçu du projet
+  (arborescence + fichiers de config) injecté comme message system, pour
+  comprendre le contexte sans outils supplémentaires.
+- **`session:done` toujours émis** : corrige le bug où le frontend restait stuck
+  en mode streaming après une erreur ou annulation.
+- **`PermissionRequest` serde fix** : ajout de `rename_all = "camelCase"` sur la
+  struct Rust, corrige le dialogue de permission qui n'apparaissait pas.
+- **Permission logging** : chaque demande et réponse de permission est loguée
+  (`tracing::info!`) pour faciliter le diagnostic.
+
+### Corrigé
+- Le dialogue de permission n'apparaissait pas car `request_id` sérialisé en
+  snake_case côté Rust était lu en camelCase côté frontend (`undefined` → aucun
+  match). Fix : `#[serde(rename_all = "camelCase")]` sur `PermissionRequest`.
+- Le listener `permission:request` dans `PermissionDialog` était dans un composant
+  pouvant ne pas être monté. Déplacé dans `App.tsx` (global) avec store zustand
+  partagé `usePermissionsStore`.
+
+### Notes
+- `cargo fmt` requis avant chaque push (CI enforce `cargo fmt --all -- --check`).
+
+[1.1.0]: https://github.com/LudovicBoudi/Cyonima-code-agent/releases/tag/v1.1.0
+
 ## [1.0.0] — 2026-07-20
 
 Première release publique. Agent IA de code 100% local, gratuit et open source,

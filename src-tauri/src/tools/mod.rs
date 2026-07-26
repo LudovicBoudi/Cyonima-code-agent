@@ -136,43 +136,46 @@ impl ToolRegistry {
 /// d'erreur prête à_logger.
 pub fn sandbox_resolve(workspace: &Path, target: &str) -> Result<PathBuf, String> {
     let target_path = Path::new(target);
-    let candidate = if target_path.is_absolute() {
-        PathBuf::from(target)
-    } else {
-        workspace.join(target)
-    };
-    // Canonisation : résout les `.` et `..`. Le workspace lui-même est
-    // pré-canisé par le session manager (passé absolu).
     let canonical_workspace = workspace
         .canonicalize()
         .map_err(|e| format!("workspace injoignable: {e}"))?;
-    let canonical_candidate = match candidate.canonicalize() {
-        Ok(p) => p,
-        // Fichier pas encore créé (cas write_file) : on canonicalise le parent
-        // puis on réattache le nom.
-        Err(_) => {
-            let parent = candidate.parent().unwrap_or_else(|| Path::new(""));
-            let canonical_parent = parent.canonicalize();
-            let Ok(canon_parent) = canonical_parent else {
-                return Err(format!(
-                    "chemin invalide (parent injoignable): `{}`",
-                    target
-                ));
-            };
-            let file_name = candidate
-                .file_name()
-                .ok_or_else(|| "nom de fichier vide".to_string())?;
-            canon_parent.join(file_name)
+
+    if target_path.is_absolute() {
+        if target_path.starts_with(&canonical_workspace) {
+            return Ok(target_path.to_path_buf());
         }
-    };
-    if !canonical_candidate.starts_with(&canonical_workspace) {
         return Err(format!(
             "chemin hors workspace: `{}` est à l'extérieur du projet ({})",
             target,
             canonical_workspace.display()
         ));
     }
-    Ok(canonical_candidate)
+
+    // Rejet des chemins relatifs avec `..` qui pourraient sortir du workspace.
+    if target_path
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        let resolved = workspace
+            .join(target)
+            .canonicalize()
+            .map_err(|e| format!("chemin invalide (..): `{}` — {e}", target))?;
+        if resolved.starts_with(&canonical_workspace) {
+            return Ok(resolved);
+        }
+        return Err(format!(
+            "chemin hors workspace: `{}` sort du projet via `..`",
+            target
+        ));
+    }
+
+    // Chemin relatif simple : si le fichier existe, on le canonicalise.
+    let candidate = workspace.join(target);
+    if let Ok(canonical) = candidate.canonicalize() {
+        return Ok(canonical);
+    }
+    // Pas encore créé : on joint au workspace canonicalisé.
+    Ok(canonical_workspace.join(target))
 }
 
 /// Tronque un contenu trop long pour le LLM (limite par défaut ~8 Ko).

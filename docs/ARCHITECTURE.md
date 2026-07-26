@@ -6,9 +6,10 @@
 ┌──────────────────────────────────────────────────────────┐
 │  Frontend React (UI, thème violet unique)                  │
 │  ├─ Sessions        (onglets multi-agents parallèles)      │
-│  │   ├─ Bloc 1 (75%) : chat + raisonnement + réponses      │
+│  │   ├─ Bloc 1 (50%) : chat + réponses + outils            │
 │  │   │    └─ chatbox : modèle · raisonnement · contexte    │
-│  │   └─ Bloc 2 (25%) : fichiers git du workspace           │
+│  │   ├─ Bloc 2 (25%) : ThinkingPanel (raisonnement)        │
+│  │   └─ Bloc 3 (25%) : fichiers git du workspace           │
 │  ├─ Catalogue        (installés + disponibles, tri RAM)    │
 │  ├─ Ollama           (modèles installés + pull)            │
 │  ├─ Config           (endpoint Ollama, permissions)        │
@@ -96,14 +97,18 @@ d'usage de contexte de la chatbox.
   `current_reasoning` dans `SessionInner`) sont modifiables en cours de session
   et transmis à chaque `session_send`.
 
-### Interface de session (2 colonnes)
+### Interface de session (3 colonnes)
 
-- **Bloc 1 (75%)** — conversation : réponses, bloc « Raisonnement du modèle »
-  repliable, tool calls, puis la **chatbox**. La chatbox porte une barre de
+- **Bloc 1 (50%)** — conversation : réponses, tool calls (avec résultat
+  repliable), puis la **chatbox**. La chatbox porte une barre de
   contrôles : sélecteur de modèle, menu d'intensité de raisonnement, et un
   **indicateur d'usage de contexte** (`tokensIn + tokensOut` du dernier tour vs
   taille de contexte du modèle). Boutons Play/Stop pour envoyer/arrêter.
-- **Bloc 2 (25%)** — **fichiers git du workspace** : liste des fichiers ajoutés /
+- **Bloc 2 (25%)** — **ThinkingPanel** : flux de tokens « thinking » du modèle
+  en temps réel, avec auto-scroll et indicateur de streaming. Le panneau se
+  vide et affiche « Le raisonnement s'affichera ici... » quand le modèle
+  ne produit pas de thinking.
+- **Bloc 3 (25%)** — **fichiers git du workspace** : liste des fichiers ajoutés /
   modifiés / supprimés / renommés via `workspace_git_status` (`git status
   --porcelain`). Rafraîchi à la fin d'une génération et par sondage pendant
   qu'un agent travaille. On suppose que les workspaces sont des dépôts git.
@@ -118,11 +123,11 @@ d'usage de contexte de la chatbox.
 
 ## Permissions
 
-| Outil | Permission par défaut |
-|---|---|
-| read_file, glob, grep | auto-approve |
-| write_file, edit_file | demande |
-| bash | demande + preview |
+| Outil | Permission par défaut | Label dans le system prompt |
+|---|---|---|
+| read_file, glob, grep | auto-approve | `Auto-approuvé` |
+| write_file, edit_file | auto-approve | `Auto-approuvé` |
+| bash | demande + preview | `Nécessite approbation` |
 
 Mécanisme : chaque tool call est enveloppé. Le gateway check `config.permissions.<tool>` puis utilise si besoin le `Command` Tauri `permission:request` qui affiche un dialogue UI.
 
@@ -156,18 +161,42 @@ Mécanisme : chaque tool call est enveloppé. Le gateway check `config.permissio
 - `hardware_can_run_model { ram_min_gb }` → bool (adéquation modèle / machine)
 - `config_get {}` / `config_get_workspace { workspace }` / `config_set_*`
 - `permission_respond { request_id, decision }`
+- `ollama_delete_model { model }` (`DELETE /api/delete`) — supprime un modèle de Ollama
 
 > Note : tous les payloads d'events de session sont sérialisés en **camelCase**
 > (`#[serde(rename_all = "camelCase")]`) pour matcher le frontend TypeScript
-> (`sessionId`, `callId`, `isError`, `tokensIn`…).
+> (`sessionId`, `callId`, `isError`, `tokensIn`…). Ceci inclut
+> `PermissionRequest.request_id` (fixé en v1.1.0 — manquait `rename_all`).
 
 ### Events (backend → frontend)
 - `session:token { sessionId, token }`
-- `session:thinking { sessionId, token }` — reasoning streamé (affiché dans un bloc repliable)
+- `session:thinking { sessionId, token }` — reasoning streamé (affiché dans le ThinkingPanel)
 - `session:tool_call { sessionId, callId, tool, arguments }`
 - `session:tool_result { sessionId, callId, tool, output, isError }`
 - `session:model_loading { sessionId, loading, progress }`
-- `session:done { sessionId, usage }`
+- `session:done { sessionId, usage }` — **toujours émis**, même en cas d'erreur ou d'annulation
 - `session:error { sessionId, error }`
 - `ollama:pull:progress { model, status, total, completed }` (+ `:done` / `:error`)
 - `permission:request { requestId, sessionId, tool, arguments, preview? }`
+
+### Workspace Snapshot
+
+À la création ou restauration d'une session, un **snapshot du workspace** est
+injecté comme premier message `system` dans le contexte LLM. Le snapshot contient
+la structure d'arborescence (depth 2, ignore `.git/target/node_modules/`) et le
+contenu des fichiers de config clés (`Cargo.toml`, `package.json`, `README.md`,
+`AGENTS.md`, etc.) — ceci donne au LLM une compréhension immédiate du projet
+sans avoir à appeler d'outils.
+
+### Permissions Logging
+
+Chaque demande de permission est loguée (`tracing::info!`) avec son
+`request_id`, et chaque réponse est loguée avec la décision. En cas de
+`request_id` inconnu, un warning est émis. Ceci aide au diagnostic quand le
+dialogue de permission n'apparaît pas.
+
+### Modèle courant modifiable en session
+
+Le modèle courant est stocké dans `SessionInner.current_model` et transmis à
+chaque `session_send`. Il est modifiable via un menu déroulant dans la chatbox.
+Un IPC `session_set_model` permet de le changer sans renvoyer de message.
