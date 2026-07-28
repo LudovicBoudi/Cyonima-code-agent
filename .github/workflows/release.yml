@@ -67,17 +67,32 @@ jobs:
       - name: Install frontend deps
         run: npm ci
 
-      - name: Build, sign & publish (tauri-action)
+      - name: Export Apple signing secrets (if available)
+        if: ${{ runner.os == 'macOS' }}
+        shell: bash
+        env:
+          CERT: ${{ secrets.APPLE_CERTIFICATE }}
+          CERT_PASS: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          SIGN_ID: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          AID: ${{ secrets.APPLE_ID }}
+          APASS: ${{ secrets.APPLE_PASSWORD }}
+          TID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # Only export to GITHUB_ENV when values are non-empty,
+          # otherwise tauri build tries `security import` with empty cert → error.
+          if [ -n "$CERT" ]; then
+            { echo "APPLE_CERTIFICATE<<CYONIMA_EOF"; echo "$CERT"; echo "CYONIMA_EOF"; } >> "$GITHUB_ENV"
+            { echo "APPLE_CERTIFICATE_PASSWORD<<CYONIMA_EOF"; echo "$CERT_PASS"; echo "CYONIMA_EOF"; } >> "$GITHUB_ENV"
+            { echo "APPLE_SIGNING_IDENTITY<<CYONIMA_EOF"; echo "$SIGN_ID"; echo "CYONIMA_EOF"; } >> "$GITHUB_ENV"
+            { echo "APPLE_ID<<CYONIMA_EOF"; echo "$AID"; echo "CYONIMA_EOF"; } >> "$GITHUB_ENV"
+            { echo "APPLE_PASSWORD<<CYONIMA_EOF"; echo "$APASS"; echo "CYONIMA_EOF"; } >> "$GITHUB_ENV"
+            { echo "APPLE_TEAM_ID<<CYONIMA_EOF"; echo "$TID"; echo "CYONIMA_EOF"; } >> "$GITHUB_ENV"
+          fi
+
+      - name: Build & publish (tauri-action)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # --- Signature macOS (facultatif : renseigner les secrets pour l'activer) ---
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           # Publie directement une Release officielle nommée d'après le tag
           # (ex: "Cyonima IA v1.0.0"), avec les installateurs en assets.
