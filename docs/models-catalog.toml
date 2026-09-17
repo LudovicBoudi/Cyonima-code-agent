@@ -410,3 +410,137 @@ license = "Apache-2.0 (Mistral)"
 ram_min_gb = 18
 model_type = "general"
 ollama_tag = "mistral-small3.2:24b"
+
+# ============================================================
+# ====  NOUVELLE GÉNÉRATION (ajoutée depuis ollama.com/search)
+# ====  Uniquement modèles locaux + gratuits/open source.
+# ====  Exclus : modèles `cloud` (glm-5.x, deepseek-v4,
+# ====  minimax-m3, kimi-k2.7-code…) non exécutables en local.
+# ============================================================
+
+# ---- Qwen 3.6 / 3.8 (agentic coding, Apache-2.0) ----
+
+[[models]]
+id = "qwen3.8-27b-q4_k_m"
+name = "Qwen 3.8 27B (Q4_K_M) — agentic coding, vision + thinking"
+quantization = "Q4_K_M"
+license = "Apache-2.0 (Qwen)"
+ram_min_gb = 24
+model_type = "coding"
+ollama_tag = "qwen3.8:27b"
+
+[[models]]
+id = "qwen3.6-27b-q4_k_m"
+name = "Qwen 3.6 27B (Q4_K_M) — agentic coding + thinking"
+quantization = "Q4_K_M"
+license = "Apache-2.0 (Qwen)"
+ram_min_gb = 24
+model_type = "coding"
+ollama_tag = "qwen3.6:27b"
+
+[[models]]
+id = "qwen3.6-35b-a3b-q4_k_m"
+name = "Qwen 3.6 35B-A3B (Q4_K_M) — MoE, agentic coding"
+quantization = "Q4_K_M"
+license = "Apache-2.0 (Qwen)"
+ram_min_gb = 32
+model_type = "coding"
+ollama_tag = "qwen3.6:35b"
+
+# ---- Muse Glimmer (Meta, Apache-2.0, agent local) ----
+
+[[models]]
+id = "muse-glimmer-30b-q4_k_m"
+name = "Muse Glimmer 30B (Q4_K_M) — agent local Meta, vision + tools"
+quantization = "Q4_K_M"
+license = "Apache-2.0 (Meta)"
+ram_min_gb = 24
+model_type = "coding"
+ollama_tag = "muse-glimmer:30b"
+
+# ---- NVIDIA Nemotron (open, agents / multimodal) ----
+
+[[models]]
+id = "nemotron-3.5-lightning-30b-q4_k_m"
+name = "Nemotron 3.5 Lightning 30B (Q4_K_M) — MoE 3B actifs, agents"
+quantization = "Q4_K_M"
+license = "NVIDIA Open Model License"
+ram_min_gb = 32
+model_type = "general"
+ollama_tag = "nemotron-3.5-lightning:30b"
+
+[[models]]
+id = "nemotron3-33b-q4_k_m"
+name = "Nemotron 3 Nano Omni 33B (Q4_K_M) — multimodal (video/audio/image)"
+quantization = "Q4_K_M"
+license = "NVIDIA Open Model License"
+ram_min_gb = 32
+model_type = "general"
+ollama_tag = "nemotron3:33b"
+
+# ---- IBM Granite 4.2 (Apache-2.0, tools + thinking) ----
+
+[[models]]
+id = "granite-4.2-3b-q4_k_m"
+name = "Granite 4.2 3B (Q4_K_M) — tools + thinking + RAG"
+quantization = "Q4_K_M"
+license = "Apache-2.0 (IBM Granite)"
+ram_min_gb = 4
+model_type = "general"
+ollama_tag = "granite4.2:3b"
+
+[[models]]
+id = "granite-4.2-8b-q4_k_m"
+name = "Granite 4.2 8B (Q4_K_M) — tools + thinking + RAG"
+quantization = "Q4_K_M"
+license = "Apache-2.0 (IBM Granite)"
+ram_min_gb = 8
+model_type = "general"
+ollama_tag = "granite4.2:8b"
+
+[[models]]
+id = "granite-4.2-30b-q4_k_m"
+name = "Granite 4.2 30B (Q4_K_M) — tools + thinking + RAG"
+quantization = "Q4_K_M"
+license = "Apache-2.0 (IBM Granite)"
+ram_min_gb = 24
+model_type = "general"
+ollama_tag = "granite4.2:30b"
+
+# ---- Ornith (MIT, coding agentique auto-améliorant) ----
+
+[[models]]
+id = "ornith-9b-q4_k_m"
+name = "Ornith 9B (Q4_K_M) — coding agentique, MIT"
+quantization = "Q4_K_M"
+license = "MIT (Ornith)"
+ram_min_gb = 8
+model_type = "coding"
+ollama_tag = "ornith:9b"
+
+[[models]]
+id = "ornith-35b-q4_k_m"
+name = "Ornith 35B (Q4_K_M) — coding agentique, MIT"
+quantization = "Q4_K_M"
+license = "MIT (Ornith)"
+ram_min_gb = 28
+model_type = "coding"
+ollama_tag = "ornith:35b"
+
+[[models]]
+id = "ornith-1.5-9b-q4_k_m"
+name = "Ornith 1.5 9B (Q4_K_M) — vision + coding"
+quantization = "Q4_K_M"
+license = "MIT (Ornith)"
+ram_min_gb = 8
+model_type = "coding"
+ollama_tag = "ornith-1.5:9b"
+
+[[models]]
+id = "ornith-1.5-35b-a3b-q4_k_m"
+name = "Ornith 1.5 35B-A3B (Q4_K_M) — vision + coding"
+quantization = "Q4_K_M"
+license = "MIT (Ornith)"
+ram_min_gb = 32
+model_type = "coding"
+ollama_tag = "ornith-1.5:35b"

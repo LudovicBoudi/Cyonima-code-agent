@@ -28,6 +28,11 @@ Cyonima-ia-code-agent est l'inverse :
 | Persistance | SQLite (sessions + messages) |
 | Licence | MIT |
 
+> **Ollama est le seul provider actif** dans cette version. Le code embarque
+> déjà d'autres backends (`llama_cpp` via candle, `openai`, `anthropic`,
+> `gemini`, `openai_compat`) ainsi qu'une recherche sémantique locale, mais ils
+> sont **désactivés** (voir [`docs/ROADMAP.md`](docs/ROADMAP.md)).
+
 ## Installation
 
 ### Télécharger (recommandé)
@@ -86,6 +91,16 @@ Thème **violet** unique (sombre). La vue session est organisée en **3 colonnes
 - **Centre (25%)** — le **panneau de raisonnement** : flux de tokens « thinking » du modèle en temps réel, avec auto-scroll et indicateur de streaming.
 - **Droite (25%)** — les **fichiers modifiés** du workspace (ajoutés / modifiés / supprimés / renommés), via `git status`. Les répertoires de travail sont supposés être des dépôts git.
 
+La **barre latérale** donne accès aux autres vues :
+
+- **Sessions** — les onglets multi-agents (fork / suppression / création).
+- **Catalogue de modèles** — tags Ollama triés par RAM, avec garde-fou hardware.
+- **Ollama** — modèles installés, pull avec progression, suppression.
+- **Importer un modèle** — import d'un `.gguf` custom (pour le backend `llama.cpp`, inactif dans cette version).
+- **Clés API** — stockage des clés des providers distants dans le keyring OS (inactifs dans cette version).
+- **Configuration** — provider/modèle par défaut, endpoint Ollama, permissions par outil.
+- **Recherche** — recherche sémantique du code (embedder désactivé dans cette version).
+
 ---
 
 ## Gérer ses modèles
@@ -119,11 +134,16 @@ Le menu déroulant du chat liste automatiquement les modèles présents dans Oll
 | Besoin | Tag Ollama conseillé | Pourquoi |
 |---|---|---|
 | **Coding agent (défaut)** | `qwen2.5-coder:7b` | Spécialisé code, 92 langages, rapide, function-calling. |
-| **Coding haute qualité** | `qwen2.5-coder:32b` | SOTA open-source pour le code. Demande 24+ Go RAM. |
+| **Coding haute qualité** | `qwen3.8:27b` ou `muse-glimmer:30b` | Nouvelle génération agentique (Apache-2.0). Demande 24+ Go RAM. |
 | **Raisonnement / math** | `deepseek-r1:14b` | Mode « thinking » long, affiché dans un bloc repliable. |
-| **Généraliste léger** | `llama3.2:3b` | Démarrage rapide, peu de RAM. |
+| **Généraliste léger** | `llama3.2:3b` ou `granite4.2:3b` | Démarrage rapide, peu de RAM. |
 | **Généraliste équilibré** | `gemma3:12b` ou `qwen2.5:14b` | Bon compromis qualité / vitesse. |
 | **Multilingue** | `qwen2.5:14b` | Fort en anglais, chinois et langues secondaires. |
+
+> Nouvelle génération (ajoutée depuis ollama.com/search) : `qwen3.8:27b`,
+> `qwen3.6:27b`, `muse-glimmer:30b`, `nemotron-3.5-lightning:30b`,
+> `nemotron3:33b`, `granite4.2:*`, `ornith:*`. Voir
+> [`docs/models-guide.md`](docs/models-guide.md) pour le détail.
 
 > Les modèles « thinking » (DeepSeek-R1, Qwen3, Gemma 4…) affichent leur raisonnement dans la **colonne centrale** dédiée, en temps réel. L'application active automatiquement le mode thinking pour les modèles qui le supportent.
 

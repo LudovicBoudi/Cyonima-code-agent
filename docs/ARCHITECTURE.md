@@ -10,9 +10,12 @@
 │  │   │    └─ chatbox : modèle · raisonnement · contexte    │
 │  │   ├─ Bloc 2 (25%) : ThinkingPanel (raisonnement)        │
 │  │   └─ Bloc 3 (25%) : fichiers git du workspace           │
-│  ├─ Catalogue        (installés + disponibles, tri RAM)    │
+│  ├─ Catalogue        (tags Ollama, tri RAM)                │
 │  ├─ Ollama           (modèles installés + pull)            │
-│  ├─ Config           (endpoint Ollama, permissions)        │
+│  ├─ Importer         (import de GGUF custom)               │
+│  ├─ Clés API         (keyring OS — providers distants)     │
+│  ├─ Configuration    (endpoint Ollama, permissions)        │
+│  ├─ Recherche        (recherche sémantique — désactivée)   │
 │  └─ Status bar       (version, session, modèle)            │
 └───────────────────────┬────────────────────────────────────┘
                         │ Tauri IPC (commands + events)
@@ -20,16 +23,25 @@
 │  Core Rust (src-tauri/src/)                                │
 │  ├─ sessions/       gestionnaire multi-session parallèle   │
 │  ├─ providers/      trait Provider (seul `ollama` actif)    │
-│  │   └─ ollama      (HTTP vers Ollama local)               │
-│  ├─ tools/          filesystem, bash, glob, grep            │
+│  │   ├─ ollama      (HTTP vers Ollama local)               │
+│  │   └─ (inactifs)  llama_cpp, openai, anthropic, gemini,  │
+│  │                  openai_compat — présents mais désactivés│
+│  ├─ tools/          filesystem, bash, glob, grep, search   │
 │  ├─ permissions/    gateway approbation utilisateur         │
 │  ├─ config/         globale + par projet (TOML)             │
+│  ├─ secrets/        clés API via keyring OS                 │
+│  ├─ models/         registry + catalogue Ollama             │
+│  ├─ hardware/       garde-fou RAM/VRAM                      │
+│  ├─ indexing/       recherche sémantique (embedder désactivé)│
 │  └─ ipc/            handlers Tauri (commands + events)      │
 └────────────────────────────────────────────────────────────┘
 ```
 
 > Le trait `Provider` reste générique pour permettre d'autres backends à
 > l'avenir, mais **seul le provider Ollama est actif** dans cette version.
+> Les implémentations `llama_cpp`, `openai`, `anthropic`, `gemini` et
+> `openai_compat` sont présentes dans le code mais **désactivées** (non
+> sélectionnables comme provider de session).
 
 ## Principes de design
 
@@ -131,6 +143,27 @@ d'usage de contexte de la chatbox.
 
 Mécanisme : chaque tool call est enveloppé. Le gateway check `config.permissions.<tool>` puis utilise si besoin le `Command` Tauri `permission:request` qui affiche un dialogue UI.
 
+## Secrets (clés API)
+
+Les clés des providers distants (`openai`, `anthropic`, `gemini`,
+`openai_compat`) sont stockées dans le **keyring OS** (DPAPI / Keychain /
+Secret Service) via le module `secrets/`. Elles ne sont jamais écrites en clair
+sur disque, jamais loggées, jamais sérialisées dans la config. Ce module est
+présent pour les backends distants, **inactifs dans cette version** (Ollama
+n'utilise pas de clé).
+
+## Indexation sémantique (désactivée)
+
+Le module `indexing/` implémente un pipeline complet :
+`fichier → chunks → embeddings (candle BERT all-MiniLM-L6-v2) → SQLite →
+recherche`, exposé via les IPC `index_build` / `index_search` / `index_count`,
+la page **Recherche** et l'outil agent `semantic_search`.
+
+> **Statut** : l'embedder est **désactivé** dans cette version
+> (`Embedder::load()` renvoie une erreur) pour éviter les téléchargements
+> automatiques qui déclenchent Windows Defender. Le code est conservé pour une
+> réactivation ultérieure.
+
 ## Configuration
 
 - **Global** : `~/.cyonima/config.toml`
@@ -143,25 +176,57 @@ Mécanisme : chaque tool call est enveloppé. Le gateway check `config.permissio
 |---|---|
 | Config globale | `~/.cyonima/config.toml` |
 | Sessions DB | `~/.cyonima/sessions.db` (SQLite) |
+| Registry modèles (GGUF importés) | `~/.cyonima/models/registry.json` |
+| Index sémantique (désactivé) | `<data_local>/cyonima/index/search.db` (SQLite) |
+| Cache embedder (désactivé) | `<data_local>/cyonima/models/embedder/` |
 | Modèles | gérés par Ollama (hors de Cyonima) |
 
 ## IPC Tauri (V1)
 
 ### Commands (frontend → backend)
+
+**Sessions**
 - `session_create { workspace, model_id, provider_id }` — `model_id` peut être vide (choisi ensuite dans le chat), `provider_id` = `ollama`
 - `session_send { session_id, message, model?, reasoning? }` — `model` et `reasoning` = sélections de la chatbox
 - `session_cancel { session_id }`
 - `session_fork { session_id }`
 - `session_history { session_id }` / `session_delete { session_id }` / `session_list {}`
+
+**Ollama**
 - `ollama_list_models {}` (`GET /api/tags`) — alimente le menu déroulant du chat
 - `ollama_pull_model { model }` (`POST /api/pull` streaming)
+- `ollama_delete_model { model }` (`DELETE /api/delete`) — supprime un modèle de Ollama
 - `ollama_model_info { model }` (`POST /api/show`) → `{ contextLength }` pour l'indicateur de contexte
-- `workspace_git_status { workspace }` → `{ isRepo, changes[] }` (fichiers modifiés, `git status --porcelain`)
+
+**Modèles & catalogue**
+- `model_catalog_list {}` → catalogue embarqué (tags Ollama) avec statut `installed`
+- `model_list_installed {}` → modèles du registry encore présents sur disque
+- `model_import_custom { path }` → import d'un GGUF custom dans le registry
+- `model_clear_cache {}` → vide registry + dossier `~/.cyonima/models`
+- `model_download` / `model_download_cancel` — **obsolètes** (stubs qui renvoient une erreur ; le téléchargement passe par Ollama)
+
+**Providers distants (keyring — inactifs dans cette version)**
+- `provider_set_api_key { provider, api_key }` / `provider_get_api_key` / `provider_has_api_key` / `provider_delete_api_key`
+- `provider_list_configured {}`
+
+**Hardware**
 - `hardware_get {}` → snapshot RAM/CPU/OS/arch/VRAM
 - `hardware_can_run_model { ram_min_gb }` → bool (adéquation modèle / machine)
-- `config_get {}` / `config_get_workspace { workspace }` / `config_set_*`
+
+**Config**
+- `config_get {}` / `config_get_workspace { workspace }`
+- `config_set_default_provider` / `config_set_default_model` / `config_set_ollama_endpoint`
+- `config_set_permission` / `config_remove_permission`
+
+**Permissions**
 - `permission_respond { request_id, decision }`
-- `ollama_delete_model { model }` (`DELETE /api/delete`) — supprime un modèle de Ollama
+
+**Git & fichiers**
+- `workspace_git_status { workspace }` → `{ isRepo, changes[] }` (fichiers modifiés, `git status --porcelain`)
+- `file_revert { workspace, path, content }` → réécrit un fichier (annulation d'un edit/write depuis le diff viewer)
+
+**Indexation sémantique (embedder désactivé)**
+- `index_build { workspace }` / `index_search { workspace, query, limit? }` / `index_count {}`
 
 > Note : tous les payloads d'events de session sont sérialisés en **camelCase**
 > (`#[serde(rename_all = "camelCase")]`) pour matcher le frontend TypeScript

@@ -23,7 +23,7 @@ Les jalons sont prévus pour être livrés dans l'ordre. Chacun a des critères 
 ## J1 — Provider trait + 1 provider local  ✅
 - Trait `Provider` + `ChatRequest` / `ChatEvent`  ✅
 - Impl `OllamaProvider` HTTP streaming NDJSON (fonctionnel)  ✅
-- Impl `LlamaCppProvider` : stub conforme au trait, **J1.5** dédié au câblage candle  ⏳
+- Impl `LlamaCppProvider` : implémentation complète via candle GGUF (llama / gemma3 / qwen2 / phi3)  ✅ (inactif — Ollama est le seul provider actif cette version)
 - `SessionManager` : pool in-memory, tokio task par envoi, events `session:token/done/error`, `CancellationToken`, fork  ✅
 - IPC `session_create` / `session_send` / `session_cancel` / `session_fork` / `session_list`  ✅
 - UI : formulaire "Nouvelle session", chat input + bouton Stop, stream display, listeners d'events  ✅
@@ -120,21 +120,26 @@ Les jalons sont prévus pour être livrés dans l'ordre. Chacun a des critères 
 - **UI StatusBar** : "N téléchargements en cours" quand actifs
 - **DoD J4** : un clic sur Télécharger lance un download robuste, repreneable sur cancel/kill, vérifié en SHA256, enregistré dans le registry. Tente `gemma-4-e2b-it-qat-q4_0` (taille 3.4 Go) pour tester.
 
-### J4.5 — Backend candle GGUF built-in (à venir)
-- Câbler `LlamaCppProvider` via `candle-core` + `candle-transformers` pour l'inférence 100% offline sans dépendre d'Ollama.
-- Maintenant testable contre un vrai GGUF téléchargé via J4.
+### J4.5 — Backend candle GGUF built-in  ✅ (inactif)
+- `LlamaCppProvider` câblé via `candle-core` + `candle-transformers` : chargement GGUF,
+  détection d'architecture (llama, gemma3, qwen2, phi3) et génération streaming.
+- **Désactivé cette version** : Ollama est le seul provider actif. Testable contre
+  un GGUF importé (cf J5).
 
-## J5 — Import modèles entreprise  ✅
+## J5 — Import modèles entreprise  ✅ (partiel — désactivé cette version)
 - UI "Importer un modèle" avec file picker natif (Tauri dialog plugin)  ✅
 - Enregistrement metadata + chemin dans registry  ✅ (validate_custom + IPC model_import_custom)
 - Détection automatique des GGUF (filtre *.gguf)  ✅
-- **DoD** : un GGUF tiers Windows est utilisable après import.  ✅
+- **DoD** : un GGUF tiers Windows est utilisable après import.  ⚠️ — l'import fonctionne,
+  mais l'inférence dépend du provider `llama_cpp`, **inactif** cette version (Ollama seul actif).
 
-## J6 — API distantes  ✅
+## J6 — API distantes  ✅ (code présent — désactivé cette version)
 - `OpenAIProvider`, `AnthropicProvider`, `GeminiProvider`, `OpenAICompatProvider`  ✅
 - IPC `provider_set_api_key` / `get` / `has` / `delete` / `list_configured`  ✅
 - Settings UI pour provider + clé (keyring OS)  ✅
-- **DoD** : chat avec GPT-4o, Claude 3.5 et Gemini Pro via clés utilisateur.  ✅
+- **DoD** : chat avec GPT-4o, Claude 3.5 et Gemini Pro via clés utilisateur.  ⚠️ — les
+  implémentations et le stockage des clés sont en place, mais les providers distants
+  sont **désactivés** cette version (Ollama seul actif).
 
 ## J7 — Ollama provider  ✅
 - Détection auto (`http://localhost:11434`)  ✅ (déjà dans OllamaProvider)
@@ -142,11 +147,13 @@ Les jalons sont prévus pour être livrés dans l'ordre. Chacun a des critères 
 - UI OllamaView : modèles installés, pull populaire (grille), pull custom, progression temps réel  ✅
 - **DoD** : un modèle Ollama local est utilisable sans redownload.  ✅
 
-## J8 — Recherche sémantique + indexing
-- Intégration de l'embedder local embarqué
-- Index SQLite + embeddings pour le workspace
-- Outil `semantic_search` pour l'agent
-- **DoD** : l'agent peut chercher "où est géré le panier dans le code" et obtenir des hits pertinents.
+## J8 — Recherche sémantique + indexing  ⚠️ (code présent — embedder désactivé)
+- Module `indexing/` (embedder BERT candle, index SQLite, recherche) + outil `semantic_search` + page « Recherche »  ✅
+- IPC `index_build` / `index_search` / `index_count`  ✅
+- **Embedder désactivé** cette version : `Embedder::load()` renvoie une erreur pour
+  éviter les téléchargements automatiques (déclencheurs Windows Defender). Le code
+  est conservé pour réactivation ultérieure.
+- **DoD** : l'agent peut chercher "où est géré le panier dans le code" et obtenir des hits pertinents.  ⏳ (bloqué tant que l'embedder est désactivé)
 
 ## J9 — Settings + config par projet  ✅
 - UI settings complète (providers, storage, permissions)  ✅

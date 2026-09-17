@@ -36,6 +36,24 @@ en cloud/datacenter, **pas en local** sur une machine normale.
 | Qwen 2.5 3B / Llama 3.2 3B | 3B dense | 32K–128K | Apache / Llama | Local | 4 Go |
 | DeepSeek-R1 Distill 1.5B | 1,5B dense | ~128K | MIT | Local | 2 Go |
 
+### Nouvelle génération (ajoutée en 2026)
+
+| Modèle | Params (total / actifs) | Contexte | Licence | RAM mini (local) |
+|---|---|---|---|---|
+| Nemotron 3 Nano Omni 33B | 33B dense | 128K | NVIDIA Open Model | 32 Go |
+| Ornith 1.5 35B-A3B | 35B / 3B (MoE) | 256K | MIT | 32 Go |
+| Qwen 3.6 35B-A3B | 35B / 3B (MoE) | 256K | Apache-2.0 | 32 Go |
+| Nemotron 3.5 Lightning 30B | 30B / 3B (MoE) | 1M | NVIDIA Open Model | 32 Go |
+| Ornith 35B | 35B dense | 256K | MIT | 28 Go |
+| Muse Glimmer 30B | 30B dense | 128K | Apache-2.0 (Meta) | 24 Go |
+| Granite 4.2 30B | 30B dense | 128K | Apache-2.0 | 24 Go |
+| Qwen 3.8 27B | 27B dense | 256K | Apache-2.0 | 24 Go |
+| Qwen 3.6 27B | 27B dense | 256K | Apache-2.0 | 24 Go |
+| Ornith 1.5 9B | 9B dense | 256K | MIT | 8 Go |
+| Ornith 9B | 9B dense | 256K | MIT | 8 Go |
+| Granite 4.2 8B | 8B dense | 128K | Apache-2.0 | 8 Go |
+| Granite 4.2 3B | 3B dense | 128K | Apache-2.0 | 4 Go |
+
 > Les contextes marqués `~` sont les maxima théoriques du modèle. Via Ollama, la
 > fenêtre effective est souvent plafonnée par `num_ctx` (fréquemment 4K–8K par
 > défaut) et par la RAM/VRAM disponible.
@@ -44,14 +62,14 @@ en cloud/datacenter, **pas en local** sur une machine normale.
 
 | Tâche | Meilleur choix **local** (app) | Plancher acceptable | Plafond (cloud, réf.) |
 |---|---|---|---|
-| **Coding agentique, refactor multi-fichiers** | Qwen 2.5 Coder 32B | Qwen 2.5 Coder 14B | GLM-5.2 (spécialisé agentic coding) |
-| **Code quotidien, autocomplétion, petits patchs** | Qwen 2.5 Coder 7B | Qwen 2.5 Coder 7B | GLM-5.2 |
-| **Raisonnement, debug complexe, algo/maths** | DeepSeek-R1 Distill 32B | DeepSeek-R1 Distill 8B | DeepSeek-V4-Pro |
-| **Généraliste (chat, rédaction, synthèse)** | Qwen 2.5 14B / Phi-4 14B | Llama 3.1 8B | GLM-5.2 / DeepSeek-V4-Pro |
-| **Réponse rapide, machine modeste** | Llama 3.2 3B / Qwen 2.5 3B | DeepSeek-R1 1.5B | — |
-| **Multilingue (FR/EN/ZH…)** | Qwen 2.5 32B / 14B | Qwen 2.5 7B | GLM-5.2 |
-| **Vision (captures, images, UI)** | Qwen 2.5 VL 7B | Qwen 2.5 VL 7B | GLM-5.2 (multimodal) |
-| **Très gros contexte (base de code entière)** | Qwen/Llama 128K (si RAM suffit) | — | DeepSeek-V4-Pro / GLM-5.2 (1M tokens) |
+| **Coding agentique, refactor multi-fichiers** | Qwen 3.8 27B / Muse Glimmer 30B | Qwen 2.5 Coder 14B | GLM-5.2 (spécialisé agentic coding) |
+| **Code quotidien, autocomplétion, petits patchs** | Ornith 9B / Qwen 2.5 Coder 7B | Qwen 2.5 Coder 7B | GLM-5.2 |
+| **Raisonnement, debug complexe, algo/maths** | QwQ 32B / DeepSeek-R1 Distill 32B | DeepSeek-R1 Distill 8B | DeepSeek-V4-Pro |
+| **Généraliste (chat, rédaction, synthèse)** | Qwen 2.5 14B / Phi-4 14B | Granite 4.2 8B / Llama 3.1 8B | GLM-5.2 / DeepSeek-V4-Pro |
+| **Réponse rapide, machine modeste** | Granite 4.2 3B / Llama 3.2 3B | DeepSeek-R1 1.5B | — |
+| **Multilingue (FR/EN/ZH…)** | Qwen 3.8 27B / Qwen 2.5 14B | Qwen 2.5 7B | GLM-5.2 |
+| **Vision (captures, images, UI)** | Qwen 3.8 / Qwen 2.5 VL 7B | Qwen 2.5 VL 7B | GLM-5.2 (multimodal) |
+| **Très gros contexte (base de code entière)** | Nemotron 3.5 Lightning (1M) / Qwen 3.8 (256K) | — | DeepSeek-V4-Pro / GLM-5.2 (1M tokens) |
 
 ## Comment lire ce repère
 
@@ -64,10 +82,11 @@ en cloud/datacenter, **pas en local** sur une machine normale.
   encaisse (colonne RAM). Le garde-fou hardware de l'app indique déjà si un modèle
   passe sur ta configuration.
 - **Règle pratique** :
-  - coder → famille *Coder* (Qwen 2.5 Coder)
-  - réfléchir / déboguer → famille *R1* (DeepSeek-R1)
-  - discuter / rédiger → généralistes (Qwen, Phi-4, Llama)
-  - images → *VL* (Qwen 2.5 VL)
+  - coder / agentic coding → Qwen 3.8, Muse Glimmer, Ornith, famille *Coder* (Qwen 2.5 Coder)
+  - réfléchir / déboguer → QwQ, famille *R1* (DeepSeek-R1)
+  - discuter / rédiger → généralistes (Qwen, Phi-4, Llama, Granite 4.2)
+  - images → *VL* (Qwen 2.5 VL, Qwen 3.8)
+  - agents 24/7, très long contexte → Nemotron 3.5 Lightning (1M), Qwen 3.8 (256K)
 
 ## Modèles frontier de référence (contexte)
 
@@ -80,4 +99,6 @@ en cloud/datacenter, **pas en local** sur une machine normale.
 
 Ces deux modèles ne sont **pas installables via Ollama sur une machine grand
 public** (ordre du téraoctet de VRAM/RAM). Ils s'utilisent via API et servent
-ici uniquement de repère de qualité.
+ici uniquement de repère de qualité. Des itérations plus récentes existent
+(GLM-5.3, DeepSeek-V4.x, Kimi K2.7…) ; elles restent **hors portée locale** —
+le principe du « plafond » demeure inchangé.
