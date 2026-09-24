@@ -92,7 +92,12 @@ impl Default for ChatRequest {
         Self {
             messages: Vec::new(),
             temperature: Some(0.7),
-            max_tokens: Some(2048),
+            // Pas de plafond par défaut : `num_predict`/`max_tokens` = 2048
+            // coupait les modèles « thinking » en plein raisonnement (le
+            // thinking compte dans le total de tokens générés). On laisse le
+            // provider décider ; les providers qui exigent un plafond
+            // (Anthropic, llama_cpp) appliquent leur propre fallback.
+            max_tokens: None,
             tools: Vec::new(),
             model: String::new(),
             reasoning: None,

@@ -136,8 +136,11 @@ struct ModelCaps {
 impl OllamaProvider {
     pub fn new(endpoint: Option<String>) -> Self {
         let endpoint = endpoint.unwrap_or_else(|| DEFAULT_ENDPOINT.to_string());
+        // Pas de `timeout()` total : il couperait les longs flux streaming
+        // (raisonnement > 10 min en CPU). On ne garde qu'un `connect_timeout`
+        // court pour échouer vite si Ollama est injoignable.
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(600))
+            .connect_timeout(Duration::from_secs(10))
             .build()
             .expect("échec de construction du client HTTP pour Ollama");
         Self { endpoint, client }
@@ -461,7 +464,11 @@ impl Provider for OllamaProvider {
             }
             // Ollama a coupé sans `done: true` (timeout / déconnexion).
             if !think_buf.is_empty() {
-                yield ChatEvent::Token(std::mem::take(&mut think_buf));
+                if in_think {
+                    yield ChatEvent::Thinking(std::mem::take(&mut think_buf));
+                } else {
+                    yield ChatEvent::Token(std::mem::take(&mut think_buf));
+                }
             }
             yield ChatEvent::Done(usage);
         };
