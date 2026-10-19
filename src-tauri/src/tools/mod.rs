@@ -73,6 +73,9 @@ impl ToolOutput {
 
 /// Abstraction universelle d'un outil agent. La factory [`ToolRegistry`]
 /// route le tool-call LLM vers le bon [`Tool::execute`].
+// `async_trait` ajoute `#[must_use]` au future boxé, qui est déjà `#[must_use]`
+// (le trait `Future` l'est), d'où le lint `double_must_use` (Clippy ≥ 1.99).
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait Tool: Send + Sync {
     fn name(&self) -> &str;

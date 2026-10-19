@@ -156,6 +156,9 @@ pub struct Capabilities {
 ///
 /// Toute nouvelle implémentation (locale ou distante) doit résider dans ce
 /// module. Pas de logique spécifique à un backend en dehors de `providers/`.
+// `async_trait` ajoute `#[must_use]` au future boxé, qui est déjà `#[must_use]`
+// (le trait `Future` l'est), d'où le lint `double_must_use` (Clippy ≥ 1.99).
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait Provider: Send + Sync {
     /// Identifiant stable du provider (ex: `llama_cpp`, `openai`, `ollama`).
