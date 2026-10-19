@@ -134,15 +134,16 @@ Le menu déroulant du chat liste automatiquement les modèles présents dans Oll
 | Besoin | Tag Ollama conseillé | Pourquoi |
 |---|---|---|
 | **Coding agent (défaut)** | `qwen2.5-coder:7b` | Spécialisé code, 92 langages, rapide, function-calling. |
-| **Coding haute qualité** | `qwen3.8:27b` ou `muse-glimmer:30b` | Nouvelle génération agentique (Apache-2.0). Demande 24+ Go RAM. |
+| **Coding haute qualité** | `qwen3.8:27b` ou `devstral-small-2:24b` | Nouvelle génération agentique (Apache-2.0). Demande 24+ Go RAM. |
 | **Raisonnement / math** | `deepseek-r1:14b` | Mode « thinking » long, affiché dans un bloc repliable. |
-| **Généraliste léger** | `llama3.2:3b` ou `granite4.2:3b` | Démarrage rapide, peu de RAM. |
-| **Généraliste équilibré** | `gemma3:12b` ou `qwen2.5:14b` | Bon compromis qualité / vitesse. |
-| **Multilingue** | `qwen2.5:14b` | Fort en anglais, chinois et langues secondaires. |
+| **Généraliste léger** | `llama3.2:3b` ou `qwen3.5:4b` | Démarrage rapide, peu de RAM. |
+| **Généraliste équilibré** | `qwen3.5:9b` ou `gemma3:12b` | Bon compromis qualité / vitesse, multimodal. |
+| **Multilingue** | `qwen3.5:27b` | Fort en anglais, chinois et 200+ langues. |
 
-> Nouvelle génération (ajoutée depuis ollama.com/search) : `qwen3.8:27b`,
-> `qwen3.6:27b`, `muse-glimmer:30b`, `nemotron-3.5-lightning:30b`,
-> `nemotron3:33b`, `granite4.2:*`, `ornith:*`. Voir
+> Nouvelle génération (ajoutée depuis ollama.com/library) : `qwen3.5:*`,
+> `qwen3.8:27b`, `qwen3.6:27b`, `devstral-small-2:24b`, `qwen3-coder-next`,
+> `muse-glimmer:30b`, `nemotron-3.5-lightning:30b`, `nemotron3:33b`,
+> `granite4.2:*`, `ornith:*`, `llama4:16x17b`. Voir
 > [`docs/models-guide.md`](docs/models-guide.md) pour le détail.
 
 > Les modèles « thinking » (DeepSeek-R1, Qwen3, Gemma 4…) affichent leur raisonnement dans la **colonne centrale** dédiée, en temps réel. L'application active automatiquement le mode thinking pour les modèles qui le supportent.
