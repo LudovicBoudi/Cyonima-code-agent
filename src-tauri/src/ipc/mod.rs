@@ -89,8 +89,8 @@ pub async fn session_send(
 }
 
 #[tauri::command]
-pub fn session_cancel(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
-    state.sessions.cancel(&session_id)
+pub async fn session_cancel(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
+    state.sessions.cancel(&session_id).await
 }
 
 #[tauri::command]

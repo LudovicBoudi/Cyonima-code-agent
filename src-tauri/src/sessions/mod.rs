@@ -119,7 +119,10 @@ pub struct SessionInner {
     /// Intensité de raisonnement courante ("auto"/"off"/"low"/"medium"/"high").
     pub current_reasoning: Mutex<String>,
     /// Permet à `session_cancel` d'interrompre le stream courant.
-    pub cancel: CancellationToken,
+    /// Encapsulé dans un Mutex pour permettre le remplacement entre chaque
+    /// envoi : un CancellationToken annulé ne peut pas être réinitialisé, donc
+    /// on en crée un nouveau avant chaque agent_loop.
+    pub cancel: Mutex<CancellationToken>,
     /// `true` si un stream est en cours — protège contre les envois concurrents.
     pub busy: Mutex<bool>,
     /// Snapshot optionnel de la persistence pour flusher les messages
@@ -266,7 +269,7 @@ impl SessionManager {
                 messages: Mutex::new(messages),
                 current_model: Mutex::new(info.model_id.clone()),
                 current_reasoning: Mutex::new("auto".to_string()),
-                cancel: CancellationToken::new(),
+                cancel: Mutex::new(CancellationToken::new()),
                 busy: Mutex::new(false),
                 persistence: self.persistence.clone(),
             });
@@ -344,7 +347,7 @@ impl SessionManager {
             messages: Mutex::new(initial_messages),
             current_model: Mutex::new(info.model_id.clone()),
             current_reasoning: Mutex::new("auto".to_string()),
-            cancel: CancellationToken::new(),
+            cancel: Mutex::new(CancellationToken::new()),
             busy: Mutex::new(false),
             persistence: self.persistence.clone(),
         });
@@ -413,7 +416,7 @@ impl SessionManager {
             messages: Mutex::new(messages),
             current_model: Mutex::new(current_model),
             current_reasoning: Mutex::new(current_reasoning),
-            cancel: CancellationToken::new(),
+            cancel: Mutex::new(CancellationToken::new()),
             busy: Mutex::new(false),
             persistence: src.persistence.clone(),
         });
@@ -486,23 +489,30 @@ impl SessionManager {
             }
         }
 
+        // Crée un nouveau CancellationToken pour cet envoi. Le token
+        // précédent peut être dans l'état « annulé » si l'utilisateur a
+        // interrompu la session précédente — un token annulé ne se réinitialise
+        // pas, donc on en instancie un nouveau à chaque appel.
+        let fresh_cancel = CancellationToken::new();
+        *session.cancel.lock().await = fresh_cancel.clone();
+
         let task_session = Arc::clone(&session);
         tracing::info!(
             "Lancement de la tâche agent_loop pour session {}",
             session_id
         );
         tokio::spawn(async move {
-            agent_loop(app, gateway, task_session).await;
+            agent_loop(app, gateway, task_session, fresh_cancel).await;
         });
         Ok(())
     }
 
     /// Annule le stream en cours d'une session (sans détruire la session).
-    pub fn cancel(&self, session_id: &str) -> Result<(), String> {
+    pub async fn cancel(&self, session_id: &str) -> Result<(), String> {
         let session = self
             .get(session_id)
             .ok_or_else(|| format!("Session '{session_id}' introuvable"))?;
-        session.cancel.cancel();
+        session.cancel.lock().await.cancel();
         Ok(())
     }
 
@@ -520,9 +530,8 @@ impl SessionManager {
 }
 
 /// Boucle d'agent : LLM stream → tool calls → permission → exec → re-LLM.
-async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionInner>) {
+async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionInner>, cancel: CancellationToken) {
     let workspace = canonicalize_workspace(&session.info.workspace);
-    let cancel = session.cancel.clone();
     let session_id = session.info.id.clone();
     let specs = session.tools.specs();
     let model = { session.current_model.lock().await.clone() };

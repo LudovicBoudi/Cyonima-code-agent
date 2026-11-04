@@ -390,7 +390,52 @@ impl Provider for OllamaProvider {
                 }
             }
 
-            if !response.status().is_success() {
+            // Filet de sécurité : si Ollama renvoie 500 "no user query found
+            // in messages", c'est que la fenêtre de contexte a été dépassée et
+            // qu'Ollama a tronqué l'historique en supprimant le message user.
+            // On retente avec un historique compacté : on ne garde que les
+            // messages system + le dernier message user, ce qui remet
+            // immanquablement un message user en dernière position.
+            if response.status() == reqwest::StatusCode::INTERNAL_SERVER_ERROR {
+                let text = response.text().await.unwrap_or_default();
+                if text.contains("no user query found") {
+                    tracing::warn!(
+                        "Ollama 500 'no user query' (contexte saturé) — retry avec historique compact"
+                    );
+                    // Reconstruit un historique minimal : system(s) + dernier user.
+                    let compacted: Vec<OllamaMessage> = {
+                        let mut out: Vec<OllamaMessage> = body.messages
+                            .iter()
+                            .filter(|m| m.role == "system")
+                            .cloned()
+                            .collect();
+                        if let Some(last_user) = body.messages.iter().rfind(|m| m.role == "user") {
+                            out.push(last_user.clone());
+                        }
+                        out
+                    };
+                    body.messages = compacted;
+                    response = match client.post(&url).json(&body).send().await {
+                        Ok(r) => r,
+                        Err(e) => {
+                            yield ChatEvent::Error(format!("Ollama injoignable: {e}"));
+                            yield ChatEvent::Done(Usage::default());
+                            return;
+                        }
+                    };
+                    if !response.status().is_success() {
+                        let status = response.status();
+                        let text2 = response.text().await.unwrap_or_default();
+                        yield ChatEvent::Error(format!("Ollama a répondu {status} (après compact): {text2}"));
+                        yield ChatEvent::Done(Usage::default());
+                        return;
+                    }
+                } else {
+                    yield ChatEvent::Error(format!("Ollama a répondu 500: {text}"));
+                    yield ChatEvent::Done(Usage::default());
+                    return;
+                }
+            } else if !response.status().is_success() {
                 let status = response.status();
                 let text = response.text().await.unwrap_or_default();
                 yield ChatEvent::Error(format!("Ollama a répondu {status}: {text}"));
