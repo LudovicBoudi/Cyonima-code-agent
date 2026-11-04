@@ -530,7 +530,12 @@ impl SessionManager {
 }
 
 /// Boucle d'agent : LLM stream → tool calls → permission → exec → re-LLM.
-async fn agent_loop(app: AppHandle, gateway: Arc<Gateway>, session: Arc<SessionInner>, cancel: CancellationToken) {
+async fn agent_loop(
+    app: AppHandle,
+    gateway: Arc<Gateway>,
+    session: Arc<SessionInner>,
+    cancel: CancellationToken,
+) {
     let workspace = canonicalize_workspace(&session.info.workspace);
     let session_id = session.info.id.clone();
     let specs = session.tools.specs();
