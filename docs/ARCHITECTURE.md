@@ -206,8 +206,9 @@ la page **Recherche** et l'outil agent `semantic_search`.
 - `model_download` / `model_download_cancel` — **obsolètes** (stubs qui renvoient une erreur ; le téléchargement passe par Ollama)
 
 **Providers distants (keyring — inactifs dans cette version)**
-- `provider_set_api_key { provider, api_key }` / `provider_get_api_key` / `provider_has_api_key` / `provider_delete_api_key`
+- `provider_set_api_key { provider, api_key }` / `provider_has_api_key` / `provider_delete_api_key`
 - `provider_list_configured {}`
+- _(`provider_get_api_key` a été retiré : une clé ne doit jamais transiter vers la webview.)_
 
 **Hardware**
 - `hardware_get {}` → snapshot RAM/CPU/OS/arch/VRAM

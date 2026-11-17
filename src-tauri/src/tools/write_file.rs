@@ -63,6 +63,8 @@ impl Tool for WriteFile {
                             format!("fichier écrasé ({} octets)", content.len())
                         };
                         // Sortie JSON structurée pour le diff viewer frontend.
+                        // Le LLM reçoit uniquement un résumé (pas le diff complet).
+                        let llm_text = summary.clone();
                         let output = serde_json::json!({
                             "message": summary,
                             "diff_info": {
@@ -72,7 +74,7 @@ impl Tool for WriteFile {
                                 "created": created,
                             },
                         });
-                        ToolOutput::ok("write_file", output.to_string())
+                        ToolOutput::ok("write_file", output.to_string()).with_llm_text(llm_text)
                     }
                     Err(e) => ToolOutput::err(
                         "write_file",

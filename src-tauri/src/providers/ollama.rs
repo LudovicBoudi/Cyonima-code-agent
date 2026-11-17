@@ -402,15 +402,22 @@ impl Provider for OllamaProvider {
                     tracing::warn!(
                         "Ollama 500 'no user query' (contexte saturé) — retry avec historique compact"
                     );
-                    // Reconstruit un historique minimal : system(s) + dernier user.
+                    // Reconstruit un historique minimal mais non destructif :
+                    // messages system + tout ce qui suit le DERNIER message user
+                    // (assistant + tool results de la tâche en cours). Garantit
+                    // la présence d'un message user sans perdre le travail du
+                    // tour courant.
                     let compacted: Vec<OllamaMessage> = {
-                        let mut out: Vec<OllamaMessage> = body.messages
+                        let mut out: Vec<OllamaMessage> = body
+                            .messages
                             .iter()
                             .filter(|m| m.role == "system")
                             .cloned()
                             .collect();
-                        if let Some(last_user) = body.messages.iter().rfind(|m| m.role == "user") {
-                            out.push(last_user.clone());
+                        if let Some(idx) = body.messages.iter().rposition(|m| m.role == "user") {
+                            out.extend(body.messages[idx..].iter().cloned());
+                        } else if let Some(last) = body.messages.last() {
+                            out.push(last.clone());
                         }
                         out
                     };

@@ -258,11 +258,6 @@ pub fn provider_set_api_key(provider: String, api_key: String) -> Result<(), Str
 }
 
 #[tauri::command]
-pub fn provider_get_api_key(provider: String) -> Result<Option<String>, String> {
-    Ok(crate::secrets::get_key(&provider))
-}
-
-#[tauri::command]
 pub fn provider_has_api_key(provider: String) -> Result<bool, String> {
     Ok(crate::secrets::has_key(&provider))
 }

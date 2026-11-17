@@ -77,8 +77,10 @@ impl Tool for EditFile {
         match tokio::fs::write(&abs, &new_content).await {
             Ok(_) => {
                 // Sortie JSON structurée pour le diff viewer frontend.
+                // Le LLM reçoit uniquement un résumé (pas le diff complet).
+                let llm_text = format!("édité {}", abs.display());
                 let output = serde_json::json!({
-                    "message": format!("édité {}", abs.display()),
+                    "message": llm_text.clone(),
                     "diff_info": {
                         "path": path,
                         "before": content,
@@ -86,7 +88,7 @@ impl Tool for EditFile {
                         "created": false,
                     },
                 });
-                ToolOutput::ok("edit_file", output.to_string())
+                ToolOutput::ok("edit_file", output.to_string()).with_llm_text(llm_text)
             }
             Err(e) => ToolOutput::err(
                 "edit_file",

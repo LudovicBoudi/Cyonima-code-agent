@@ -12,10 +12,11 @@
 //! (timeout 30s), puis on renvoie stdout+stderr tronqués.
 
 use std::path::Path;
-use std::process::Command;
+use std::process::Stdio;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use tokio::process::Command;
 
 use super::{truncate_for_llm, Tool, ToolOutput, ToolSpec};
 
@@ -58,60 +59,60 @@ impl Tool for Bash {
         let Some(cmd) = args.get("command").and_then(|v| v.as_str()) else {
             return ToolOutput::err("bash", "argument `command` manquant");
         };
-        let timeout = args
+        let timeout_secs = args
             .get("timeout")
             .and_then(|v| v.as_u64())
-            .map(|t| t.min(300))
+            .map(|t| t.clamp(1, 300))
             .unwrap_or(30);
 
-        // On lance le process via Command (sync) dans block_in_place pour ne
-        // pas bloquer le runtime async.
-        let cwd = workspace.to_path_buf();
-        let cmd = cmd.to_string();
-        let result = tokio::task::block_in_place(|| {
-            let mut builder = if cfg!(target_os = "windows") {
-                let mut b = Command::new("cmd");
-                b.args(["/C", &cmd]);
-                b
-            } else {
-                let mut b = Command::new("/bin/sh");
-                b.args(["-c", &cmd]);
-                b
-            };
-            builder
-                .current_dir(&cwd)
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped());
-            let child = match builder.spawn() {
-                Ok(c) => c,
-                Err(e) => return ToolOutput::err("bash", format!("échec spawn: {e}")),
-            };
-            // wait_with_output + timeout : on attend dans un thread pour pouvoir
-            // interrompre. Block_in_place le permet.
-            let wait = std::thread::spawn(move || child.wait_with_output());
-            match wait.join() {
-                Ok(Ok(out)) => {
-                    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-                    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-                    let combined = if stdout.is_empty() {
-                        stderr.clone()
-                    } else if stderr.is_empty() {
-                        stdout.clone()
-                    } else {
-                        format!("STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}")
-                    };
-                    let exit = out.status.code().unwrap_or(-1);
-                    let body = format!("exit_code={exit}\n{combined}");
-                    ToolOutput::ok("bash", truncate_for_llm(&body, 8_192))
-                }
-                Ok(Err(e)) => ToolOutput::err("bash", format!("échec wait: {e}")),
-                Err(_) => ToolOutput::err("bash", "thread attendre a paniqué"),
+        // Exécution asynchrone (tokio::process) : le timeout est réellement
+        // appliqué. `kill_on_drop(true)` garantit que le process est tué si le
+        // future `wait_with_output` est abandonné au timeout.
+        let mut builder = if cfg!(target_os = "windows") {
+            let mut b = Command::new("cmd");
+            b.args(["/C", cmd]);
+            b
+        } else {
+            let mut b = Command::new("/bin/sh");
+            b.args(["-c", cmd]);
+            b
+        };
+        builder
+            .current_dir(workspace)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+
+        let child = match builder.spawn() {
+            Ok(c) => c,
+            Err(e) => return ToolOutput::err("bash", format!("échec spawn: {e}")),
+        };
+
+        match tokio::time::timeout(
+            Duration::from_secs(timeout_secs),
+            child.wait_with_output(),
+        )
+        .await
+        {
+            Ok(Ok(out)) => {
+                let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+                let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+                let combined = if stdout.is_empty() {
+                    stderr.clone()
+                } else if stderr.is_empty() {
+                    stdout.clone()
+                } else {
+                    format!("STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}")
+                };
+                let exit = out.status.code().unwrap_or(-1);
+                let body = format!("exit_code={exit}\n{combined}");
+                ToolOutput::ok("bash", truncate_for_llm(&body, 8_192))
             }
-        });
-        // Force le timeout en cas de process coincé. Approximation : le wait
-        // ci-dessus ne coupe pas réellement le child au timeout, mais ce sera
-        // amélioré en J3.5 avec CancellationToken propre.
-        let _ = Duration::from_secs(timeout);
-        result
+            Ok(Err(e)) => ToolOutput::err("bash", format!("échec wait: {e}")),
+            Err(_) => ToolOutput::err(
+                "bash",
+                format!("commande interrompue après {timeout_secs}s (timeout dépassé, process tué)"),
+            ),
+        }
     }
 }

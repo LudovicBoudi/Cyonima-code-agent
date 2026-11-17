@@ -793,10 +793,12 @@ async fn agent_loop(
                 },
             );
             // Format du message `tool` attendu par Ollama/OpenAI-compatible :
-            // le contenu porte le résultat texte rendu au modèle.
+            // le contenu porte le résultat texte rendu au modèle. On utilise
+            // `for_llm()` (résumé compact) pour ne pas saturer le contexte avec
+            // les diffs complets destinés à l'UI.
             let tool_msg = ChatMessage {
                 role: Role::Tool,
-                content: output.output.clone(),
+                content: output.for_llm().to_string(),
                 tool_call_id: Some(tc.id.clone()),
                 tool_name: Some(tc.tool.clone()),
                 tool_calls: None,
@@ -861,7 +863,12 @@ fn build_workspace_snapshot(workspace: &Path) -> String {
                 found_config = true;
             }
             let truncated = if content.len() > 2000 {
-                format!("{}… (tronqué)", &content[..2000])
+                // Coupe sur une frontière de caractère (contenu UTF-8).
+                let mut end = 2000;
+                while end > 0 && !content.is_char_boundary(end) {
+                    end -= 1;
+                }
+                format!("{}… (tronqué)", &content[..end])
             } else {
                 content
             };
