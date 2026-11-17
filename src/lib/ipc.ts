@@ -39,31 +39,6 @@ export interface ModelInfo {
   url?: string;
 }
 
-export interface DownloadProgress {
-  modelId: string;
-  bytes: number;
-  total: number;
-}
-
-export interface DownloadProgressEvent {
-  modelId: string;
-  downloaded: number;
-  total: number;
-  bytesPerSecond: number;
-}
-
-export interface DownloadDoneEvent {
-  modelId: string;
-  path: string;
-  sha256: string;
-  sizeBytes: number;
-}
-
-export interface DownloadErrorEvent {
-  modelId: string;
-  error: string;
-}
-
 export interface HardwareInfo {
   totalRamBytes: number;
   totalRamGb: number;
@@ -148,9 +123,6 @@ export const ipc = {
 
   modelListInstalled: () => invoke<ModelInfo[]>("model_list_installed"),
   modelCatalogList: () => invoke<ModelInfo[]>("model_catalog_list"),
-  modelDownload: (p: { modelId: string }) => invoke<void>("model_download", p),
-  modelDownloadCancel: (p: { modelId: string }) =>
-    invoke<void>("model_download_cancel", p),
   modelClearCache: () => invoke<void>("model_clear_cache"),
   modelImportCustom: (p: { path: string }) =>
     invoke<ModelInfo>("model_import_custom", p),
@@ -247,18 +219,6 @@ export function onSessionModelLoading(
   cb: (e: { sessionId: string; loading: boolean; progress: number }) => void,
 ): Promise<UnlistenFn> {
   return listen("session:model_loading", (ev) => cb(ev.payload as never));
-}
-
-export function onDownloadProgress(cb: (e: DownloadProgressEvent) => void): Promise<UnlistenFn> {
-  return listen("model:download:progress", (ev) => cb(ev.payload as never));
-}
-
-export function onDownloadDone(cb: (e: DownloadDoneEvent) => void): Promise<UnlistenFn> {
-  return listen("model:download:done", (ev) => cb(ev.payload as never));
-}
-
-export function onDownloadError(cb: (e: DownloadErrorEvent) => void): Promise<UnlistenFn> {
-  return listen("model:download:error", (ev) => cb(ev.payload as never));
 }
 
 export interface PermissionRequestEvent {

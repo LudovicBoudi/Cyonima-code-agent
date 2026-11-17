@@ -55,8 +55,6 @@ pub fn run() {
             ipc::session_list,
             ipc::model_list_installed,
             ipc::model_catalog_list,
-            ipc::model_download,
-            ipc::model_download_cancel,
             ipc::model_clear_cache,
             ipc::model_import_custom,
             ipc::permission_respond,

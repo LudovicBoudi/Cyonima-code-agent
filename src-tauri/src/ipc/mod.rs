@@ -139,22 +139,6 @@ pub async fn model_catalog_list(state: State<'_, AppState>) -> Result<Vec<ModelI
     Ok(models::list_catalog(&state.registry).await)
 }
 
-/// Lance le téléchargement d'un modèle du catalogue.
-/// OBSOLÈTE : utiliser Ollama pull à la place.
-#[tauri::command]
-pub async fn model_download(
-    _app: tauri::AppHandle,
-    _state: State<'_, AppState>,
-    _model_id: String,
-) -> Result<(), String> {
-    Err("Téléchargement GGUF obsolète. Utilisez 'Pull Ollama' dans le catalogue.".to_string())
-}
-
-#[tauri::command]
-pub fn model_download_cancel(_state: State<'_, AppState>, _model_id: String) -> Result<(), String> {
-    Err("Téléchargement GGUF obsolète.".to_string())
-}
-
 /// Vide le cache des modèles téléchargés (registry + fichiers GGUF).
 /// Utile pour nettoyer après migration vers Ollama.
 #[tauri::command]
@@ -252,25 +236,41 @@ fn default_models_dir() -> PathBuf {
 
 // ===== API Keys (keyring OS) =====
 
+/// Providers distants connus (stockage de clé API via keyring OS).
+const KNOWN_PROVIDERS: [&str; 4] = ["openai", "anthropic", "gemini", "openai_compat"];
+
+fn validate_provider(provider: &str) -> Result<(), String> {
+    if KNOWN_PROVIDERS.contains(&provider) {
+        Ok(())
+    } else {
+        Err(format!(
+            "provider inconnu: `{provider}` (attendu: {})",
+            KNOWN_PROVIDERS.join(", ")
+        ))
+    }
+}
+
 #[tauri::command]
 pub fn provider_set_api_key(provider: String, api_key: String) -> Result<(), String> {
+    validate_provider(&provider)?;
     crate::secrets::set_key(&provider, &api_key).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn provider_has_api_key(provider: String) -> Result<bool, String> {
+    validate_provider(&provider)?;
     Ok(crate::secrets::has_key(&provider))
 }
 
 #[tauri::command]
 pub fn provider_delete_api_key(provider: String) -> Result<(), String> {
+    validate_provider(&provider)?;
     crate::secrets::delete_key(&provider).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn provider_list_configured() -> Result<Vec<String>, String> {
-    let providers = ["openai", "anthropic", "gemini", "openai_compat"];
-    Ok(providers
+    Ok(KNOWN_PROVIDERS
         .iter()
         .filter(|p| crate::secrets::has_key(p))
         .map(|p| p.to_string())
@@ -815,11 +815,19 @@ pub struct SearchResult {
 pub async fn index_build(
     workspace: String,
 ) -> Result<crate::indexing::indexer::IndexStats, String> {
+    // Valide que le workspace est un répertoire existant (canonicalisé) avant
+    // de parcourir le disque.
+    let root = std::path::Path::new(&workspace)
+        .canonicalize()
+        .map_err(|e| format!("workspace invalide `{workspace}`: {e}"))?;
+    if !root.is_dir() {
+        return Err(format!("`{}` n'est pas un répertoire", root.display()));
+    }
     let pool = open_index_pool().await.map_err(|e| e.to_string())?;
     crate::indexing::indexer::clear_index(&pool)
         .await
         .map_err(|e| e.to_string())?;
-    crate::indexing::indexer::index_workspace(&pool, std::path::Path::new(&workspace))
+    crate::indexing::indexer::index_workspace(&pool, &root)
         .await
         .map_err(|e| e.to_string())
 }

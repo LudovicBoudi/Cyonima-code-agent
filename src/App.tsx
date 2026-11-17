@@ -10,7 +10,6 @@ import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { PermissionDialog } from "./components/PermissionDialog";
 import { useSessionsStore } from "./store/sessions";
-import { useDownloadsStore } from "./store/downloads";
 import {
   onSessionToken,
   onSessionDone,
@@ -20,9 +19,6 @@ import {
   onSessionThinking,
   onSessionModelLoading,
   onPermissionRequest,
-  onDownloadProgress,
-  onDownloadDone,
-  onDownloadError,
 } from "./lib/ipc";
 import { useKeyboardShortcuts, registerShortcut } from "./lib/shortcuts";
 import { usePermissionsStore } from "./store/permissions";
@@ -46,9 +42,6 @@ export default function App() {
   const setModelLoadingProgress = useSessionsStore((s) => s.setModelLoadingProgress);
   const addToolCall = useSessionsStore((s) => s.addToolCall);
   const setToolResult = useSessionsStore((s) => s.setToolResult);
-  const setProgress = useDownloadsStore((s) => s.setProgress);
-  const markDownloadDone = useDownloadsStore((s) => s.markDone);
-  const markDownloadError = useDownloadsStore((s) => s.markError);
   const enqueuePermission = usePermissionsStore((s) => s.enqueue);
 
   // Au démarrage : recharge les sessions persistées en SQLite + la liste des
@@ -104,26 +97,6 @@ export default function App() {
         }),
       );
       track(
-        await onDownloadProgress((e) =>
-          setProgress({
-            modelId: e.modelId,
-            downloaded: e.downloaded,
-            total: e.total,
-            bytesPerSecond: e.bytesPerSecond,
-          }),
-        ),
-      );
-      track(
-        await onDownloadDone((e) => {
-          markDownloadDone(e.modelId);
-        }),
-      );
-      track(
-        await onDownloadError((e) => {
-          markDownloadError(e.modelId, e.error);
-        }),
-      );
-      track(
         await onPermissionRequest((req) => {
           enqueuePermission(req);
           addToolCall(req.sessionId, {
@@ -148,9 +121,6 @@ export default function App() {
     setToolResult,
     setModelLoading,
     setModelLoadingProgress,
-    setProgress,
-    markDownloadDone,
-    markDownloadError,
     enqueuePermission,
   ]);
 
