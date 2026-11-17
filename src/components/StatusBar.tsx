@@ -8,7 +8,7 @@ export function StatusBar() {
 
   return (
     <footer className="flex h-6 items-center gap-3 border-t border-border px-3 text-xs text-muted">
-      <span>Cyonima IA v1.1.2</span>
+      <span>Cyonima IA v1.3.0</span>
       <span>•</span>
       <span>{active ? `${active.modelId} · ${active.providerId}` : "Aucune session active"}</span>
       <span className="ml-auto">MIT • 100% local</span>
