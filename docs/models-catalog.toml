@@ -619,3 +619,78 @@ license = "Llama Community License"
 ram_min_gb = 80
 model_type = "general"
 ollama_tag = "llama4:16x17b"
+
+# ============================================================
+# ====  MISE À JOUR ollama.com/library (local + open/free)  ===
+# ============================================================
+
+# ---- Ministral 3 (Mistral, Apache-2.0, edge, vision + tools) ----
+
+[[models]]
+id = "ministral-3-3b-q4_k_m"
+name = "Ministral 3 3B (Q4_K_M) — edge, vision + tools"
+quantization = "Q4_K_M"
+license = "Apache-2.0 (Mistral)"
+ram_min_gb = 4
+model_type = "general"
+ollama_tag = "ministral-3:3b"
+
+[[models]]
+id = "ministral-3-8b-q4_k_m"
+name = "Ministral 3 8B (Q4_K_M) — edge, vision + tools"
+quantization = "Q4_K_M"
+license = "Apache-2.0 (Mistral)"
+ram_min_gb = 8
+model_type = "general"
+ollama_tag = "ministral-3:8b"
+
+[[models]]
+id = "ministral-3-14b-q4_k_m"
+name = "Ministral 3 14B (Q4_K_M) — vision + tools"
+quantization = "Q4_K_M"
+license = "Apache-2.0 (Mistral)"
+ram_min_gb = 12
+model_type = "general"
+ollama_tag = "ministral-3:14b"
+
+# ---- Nemotron 3 Nano (NVIDIA Open Model License, tools + thinking) ----
+
+[[models]]
+id = "nemotron-3-nano-4b-q4_k_m"
+name = "Nemotron 3 Nano 4B (Q4_K_M) — tools + thinking"
+quantization = "Q4_K_M"
+license = "NVIDIA Open Model License"
+ram_min_gb = 4
+model_type = "general"
+ollama_tag = "nemotron-3-nano:4b"
+
+[[models]]
+id = "nemotron-3-nano-30b-q4_k_m"
+name = "Nemotron 3 Nano 30B-A3.5B (Q4_K_M) — MoE, 1M contexte"
+quantization = "Q4_K_M"
+license = "NVIDIA Open Model License"
+ram_min_gb = 32
+model_type = "general"
+ollama_tag = "nemotron-3-nano:30b"
+
+# ---- Gemma 3n (Google, gratuit, edge multimodal) ----
+
+[[models]]
+id = "gemma-3n-e4b-q4_k_m"
+name = "Gemma 3n E4B (Q4_K_M) — edge multimodal, 32K"
+quantization = "Q4_K_M"
+license = "Gemma Terms (Google)"
+ram_min_gb = 12
+model_type = "general"
+ollama_tag = "gemma3n:e4b"
+
+# ---- Gemma 4 26B-A4B MoE (workstation) ----
+
+[[models]]
+id = "gemma-4-26b-a4b-q4_k_m"
+name = "Gemma 4 26B-A4B MoE (Q4_K_M) — workstation, vision"
+quantization = "Q4_K_M"
+license = "Apache-2.0 (Gemma 4)"
+ram_min_gb = 24
+model_type = "general"
+ollama_tag = "gemma4:26b"

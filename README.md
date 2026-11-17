@@ -168,13 +168,15 @@ Le menu déroulant du chat liste automatiquement les modèles présents dans Oll
 | **Coding agent (défaut)** | `qwen2.5-coder:7b` | Spécialisé code, 92 langages, rapide, function-calling. |
 | **Coding haute qualité** | `qwen3.8:27b` ou `devstral-small-2:24b` | Nouvelle génération agentique (Apache-2.0). Demande 24+ Go RAM. |
 | **Raisonnement / math** | `deepseek-r1:14b` | Mode « thinking » long, affiché dans un bloc repliable. |
-| **Généraliste léger** | `llama3.2:3b` ou `qwen3.5:4b` | Démarrage rapide, peu de RAM. |
-| **Généraliste équilibré** | `qwen3.5:9b` ou `gemma3:12b` | Bon compromis qualité / vitesse, multimodal. |
+| **Généraliste léger** | `llama3.2:3b`, `qwen3.5:4b` ou `ministral-3:3b` | Démarrage rapide, peu de RAM. |
+| **Généraliste équilibré** | `qwen3.5:9b`, `ministral-3:8b` ou `gemma3:12b` | Bon compromis qualité / vitesse, multimodal. |
 | **Multilingue** | `qwen3.5:27b` | Fort en anglais, chinois et 200+ langues. |
+| **Vision / edge** | `ministral-3:8b`, `gemma3n:e4b` | Multimodal léger, tourne sur laptop. |
 
 > Nouvelle génération (ajoutée depuis ollama.com/library) : `qwen3.5:*`,
 > `qwen3.8:27b`, `qwen3.6:27b`, `devstral-small-2:24b`, `qwen3-coder-next`,
-> `muse-glimmer:30b`, `nemotron-3.5-lightning:30b`, `nemotron3:33b`,
+> `muse-glimmer:30b`, `nemotron-3.5-lightning:30b`, `nemotron-3-nano:*`,
+> `nemotron3:33b`, `ministral-3:*`, `gemma3n:e4b`, `gemma4:26b`,
 > `granite4.2:*`, `ornith:*`, `llama4:16x17b`. Voir
 > [`docs/models-guide.md`](docs/models-guide.md) pour le détail.
 

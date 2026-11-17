@@ -60,6 +60,13 @@ en cloud/datacenter, **pas en local** sur une machine normale.
 | Granite 4.2 8B | 8B dense | 128K | Apache-2.0 | 8 Go |
 | Qwen 3.5 4B | 4B | 256K | Apache-2.0 | 4 Go |
 | Granite 4.2 3B | 3B dense | 128K | Apache-2.0 | 4 Go |
+| Nemotron 3 Nano 30B-A3.5B | 30B / 3.5B (MoE) | 1M | NVIDIA Open Model | 32 Go |
+| Gemma 4 26B-A4B | 25,2B / 3,8B (MoE) | 256K | Apache-2.0 | 24 Go |
+| Ministral 3 14B | 14B | 256K | Apache-2.0 | 12 Go |
+| Gemma 3n E4B | ~4B eff. | 32K | Gemma Terms | 12 Go |
+| Ministral 3 8B | 8B | 256K | Apache-2.0 | 8 Go |
+| Ministral 3 3B | 3B | 256K | Apache-2.0 | 4 Go |
+| Nemotron 3 Nano 4B | 4B | 256K | NVIDIA Open Model | 4 Go |
 
 > Les contextes marqués `~` sont les maxima théoriques du modèle. Via Ollama, la
 > fenêtre effective est souvent plafonnée par `num_ctx` (fréquemment 4K–8K par
@@ -91,9 +98,10 @@ en cloud/datacenter, **pas en local** sur une machine normale.
 - **Règle pratique** :
   - coder / agentic coding → Qwen 3.8, Devstral Small 2, Muse Glimmer, Ornith, famille *Coder* (Qwen 2.5 Coder)
   - réfléchir / déboguer → QwQ, famille *R1* (DeepSeek-R1)
-  - discuter / rédiger / multimodal → Qwen 3.5, Qwen, Phi-4, Llama, Granite 4.2
-  - images → *VL* (Qwen 3.5, Qwen 2.5 VL, Qwen 3.8)
-  - agents 24/7, très long contexte → Llama 4 Scout (10M), Nemotron 3.5 Lightning (1M)
+  - discuter / rédiger / multimodal → Qwen 3.5, Ministral 3, Qwen, Phi-4, Llama, Granite 4.2
+  - edge / machine modeste → Ministral 3 (3B/8B), Gemma 3n E4B, Nemotron 3 Nano 4B
+  - images → *VL* (Qwen 3.5, Ministral 3, Qwen 2.5 VL, Qwen 3.8)
+  - agents 24/7, très long contexte → Llama 4 Scout (10M), Nemotron 3 Nano 30B / Nemotron 3.5 Lightning (1M)
 
 ## Modèles frontier de référence (contexte)
 
