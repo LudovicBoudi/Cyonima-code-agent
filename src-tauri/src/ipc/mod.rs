@@ -384,7 +384,10 @@ pub async fn ollama_pull_model(
         let body = serde_json::json!({ "model": model_clone, "stream": true });
 
         let client = match reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(3600)) // pull peut être long
+            // Pas de timeout total : un gros pull peut durer longtemps. On
+            // garde un connect_timeout court pour échouer vite si Ollama est
+            // injoignable.
+            .connect_timeout(std::time::Duration::from_secs(10))
             .build()
         {
             Ok(c) => c,
@@ -488,6 +491,15 @@ pub async fn ollama_pull_model(
                 }
             }
         }
+        // Le flux s'est terminé sans `status: success` ni erreur explicite :
+        // on émet une erreur pour ne pas laisser l'UI bloquée « en cours ».
+        let _ = app.emit(
+            "ollama:pull:error",
+            serde_json::json!({
+                "model": model_clone,
+                "error": "Flux terminé sans confirmation de succès",
+            }),
+        );
     });
 
     Ok(())
@@ -675,8 +687,11 @@ pub async fn config_get(state: State<'_, AppState>) -> Result<serde_json::Value,
 /// Charge et merge la config d'un workspace spécifique. Renvoie la config
 /// resultante (globale + override workspace).
 #[tauri::command]
-pub async fn config_get_workspace(workspace: String) -> Result<serde_json::Value, String> {
-    let global = ConfigManager::open().await.get().await;
+pub async fn config_get_workspace(
+    state: State<'_, AppState>,
+    workspace: String,
+) -> Result<serde_json::Value, String> {
+    let global = state.config.get().await;
     let ws = ConfigManager::load_workspace_config(&workspace)
         .await
         .unwrap_or_default();

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Undo2 } from "lucide-react";
 import { ipc } from "../lib/ipc";
 
@@ -68,9 +68,16 @@ export function DiffViewer({
   const [reverted, setReverted] = useState(false);
   const [reverting, setReverting] = useState(false);
 
-  const lines = computeDiffLines(diffInfo.before, diffInfo.after);
-  const adds = lines.filter((l) => l.type === "add").length;
-  const removes = lines.filter((l) => l.type === "remove").length;
+  // Diff mémoïsé : évite de recalculer un LCS O(n*m) à chaque render.
+  // Au-delà d'un seuil, on n'affiche pas le diff ligne-à-ligne (trop coûteux).
+  const lines = useMemo<DiffLine[] | null>(() => {
+    const oldLines = diffInfo.before.split("\n").length;
+    const newLines = diffInfo.after.split("\n").length;
+    if (oldLines * newLines > 4_000_000) return null;
+    return computeDiffLines(diffInfo.before, diffInfo.after);
+  }, [diffInfo.before, diffInfo.after]);
+  const adds = lines ? lines.filter((l) => l.type === "add").length : 0;
+  const removes = lines ? lines.filter((l) => l.type === "remove").length : 0;
 
   const handleRevert = async () => {
     setReverting(true);
@@ -118,7 +125,11 @@ export function DiffViewer({
           )}
         </div>
       </div>
-      {open && (
+      {open && (lines === null ? (
+        <div className="px-3 py-2 text-xs text-muted">
+          Fichier trop volumineux pour afficher le diff ligne-à-ligne.
+        </div>
+      ) : (
         <pre className="max-h-60 overflow-y-auto bg-surface text-xs font-mono leading-relaxed">
           {lines.map((l, i) => (
             <div key={i} className="flex">
@@ -147,7 +158,7 @@ export function DiffViewer({
             </div>
           ))}
         </pre>
-      )}
+      ))}
     </div>
   );
 }

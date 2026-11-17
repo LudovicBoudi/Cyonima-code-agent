@@ -50,9 +50,41 @@ Vérifiez l'intégrité via `SHA256SUMS.txt` joint à la release. Dans tous les 
 ### Prérequis (build depuis les sources)
 
 - **[Ollama](https://ollama.com)** installé et lancé (`ollama serve`) — c'est le moteur d'inférence.
-- **Rust** ≥ 1.77 ([rustup](https://rustup.rs))
-- **Node.js** ≥ 20
-- **Tauri 2 prerequisites** : WebView2 (Windows), Xcode CLT (macOS), `webkit2gtk` (Linux)
+- **Rust** ≥ 1.77 ([rustup](https://rustup.rs)) — `rustup` installe `cargo`/`rustc` dans `~/.cargo/bin`.
+- **Node.js** ≥ 20 (LTS recommandé) et `npm`.
+- **Tauri 2 prerequisites** selon l'OS (voir ci-dessous).
+
+#### Linux (Debian / Ubuntu / Zorin)
+
+Les bibliothèques système suivantes sont **obligatoires** pour compiler et lancer
+`npm run tauri dev` (le crate `webkit2gtk-sys` échoue sinon) :
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+  libwebkit2gtk-4.1-dev \
+  librsvg2-dev \
+  patchelf \
+  libssl-dev \
+  libgtk-3-dev \
+  libayatana-appindicator3-dev \
+  build-essential
+```
+
+Vérification rapide : `pkg-config --exists webkit2gtk-4.1 && echo OK`.
+
+#### macOS
+
+- Xcode Command Line Tools : `xcode-select --install`.
+
+#### Windows
+
+- **WebView2** (préinstallé sur Windows 10/11) + **Build Tools for Visual Studio**
+  (charge de travail « Développement Desktop en C++ »).
+
+> ⚠️ Si `./node_modules/.bin/tauri` renvoie **« Bus error » / SIGBUS** au lancement,
+> le binaire natif du CLI est tronqué (installation interrompue). Corrige avec
+> `npm ci` (réextrait le binaire complet).
 
 ## Démarrage rapide
 

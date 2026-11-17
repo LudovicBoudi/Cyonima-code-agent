@@ -117,6 +117,17 @@ impl Persistence {
         ] {
             let _ = sqlx::query(col_sql).execute(&self.pool).await;
         }
+        // Migration douce de la table `sessions` (colonnes ajoutées après coup).
+        for col_sql in &[
+            "ALTER TABLE sessions ADD COLUMN title TEXT",
+            "ALTER TABLE sessions ADD COLUMN updated_at TEXT",
+        ] {
+            let _ = sqlx::query(col_sql).execute(&self.pool).await;
+        }
+        // Backfill : les anciennes lignes n'ont pas de `updated_at`.
+        let _ = sqlx::query("UPDATE sessions SET updated_at = created_at WHERE updated_at IS NULL")
+            .execute(&self.pool)
+            .await;
         Ok(())
     }
 
@@ -218,14 +229,9 @@ impl Persistence {
         Ok(())
     }
 
-    /// Ajoute un message à la session. `seq` est dérivé du count actuel.
+    /// Ajoute un message à la session. `seq` est calculé atomiquement dans
+    /// l'INSERT (sous-requête) pour éviter la course `count + 1`.
     pub async fn append_message(&self, session_id: &str, msg: &ChatMessage) -> anyhow::Result<()> {
-        // Calcule seq = count courant + 1.
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE session_id = ?")
-            .bind(session_id)
-            .fetch_one(&self.pool)
-            .await?;
-        let seq = count + 1;
         let tool_calls_json = msg
             .tool_calls
             .as_ref()
@@ -233,13 +239,13 @@ impl Persistence {
         sqlx::query(
             r#"
             INSERT INTO messages (session_id, role, content, seq, created_at, tool_call_id, tool_name, tool_calls_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, (SELECT COALESCE(MAX(seq), 0) + 1 FROM messages WHERE session_id = ?), ?, ?, ?, ?)
             "#,
         )
         .bind(session_id)
         .bind(msg.role.as_str())
         .bind(&msg.content)
-        .bind(seq)
+        .bind(session_id)
         .bind(Utc::now().to_rfc3339())
         .bind(&msg.tool_call_id)
         .bind(&msg.tool_name)

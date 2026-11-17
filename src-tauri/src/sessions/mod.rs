@@ -20,6 +20,7 @@ pub mod agents_md;
 pub mod persistence;
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -124,7 +125,7 @@ pub struct SessionInner {
     /// on en crée un nouveau avant chaque agent_loop.
     pub cancel: Mutex<CancellationToken>,
     /// `true` si un stream est en cours — protège contre les envois concurrents.
-    pub busy: Mutex<bool>,
+    pub busy: AtomicBool,
     /// Snapshot optionnel de la persistence pour flusher les messages
     /// au fil de l'eau (None pour les tests unitaires sans DB).
     persistence: Option<persistence::Persistence>,
@@ -270,7 +271,7 @@ impl SessionManager {
                 current_model: Mutex::new(info.model_id.clone()),
                 current_reasoning: Mutex::new("auto".to_string()),
                 cancel: Mutex::new(CancellationToken::new()),
-                busy: Mutex::new(false),
+                busy: AtomicBool::new(false),
                 persistence: self.persistence.clone(),
             });
             self.sessions.insert(info.id.clone(), inner);
@@ -348,7 +349,7 @@ impl SessionManager {
             current_model: Mutex::new(info.model_id.clone()),
             current_reasoning: Mutex::new("auto".to_string()),
             cancel: Mutex::new(CancellationToken::new()),
-            busy: Mutex::new(false),
+            busy: AtomicBool::new(false),
             persistence: self.persistence.clone(),
         });
         self.sessions.insert(info.id.clone(), inner);
@@ -417,7 +418,7 @@ impl SessionManager {
             current_model: Mutex::new(current_model),
             current_reasoning: Mutex::new(current_reasoning),
             cancel: Mutex::new(CancellationToken::new()),
-            busy: Mutex::new(false),
+            busy: AtomicBool::new(false),
             persistence: src.persistence.clone(),
         });
         self.sessions.insert(forked.id.clone(), inner);
@@ -460,15 +461,11 @@ impl SessionManager {
             }
         }
 
-        {
-            let mut busy = session.busy.lock().await;
-            if *busy {
-                tracing::warn!("Session {} déjà en cours", session_id);
-                return Err(
-                    "Un stream est déjà en cours sur cette session — annulez-le d'abord.".into(),
-                );
-            }
-            *busy = true;
+        if session.busy.swap(true, Ordering::SeqCst) {
+            tracing::warn!("Session {} déjà en cours", session_id);
+            return Err(
+                "Un stream est déjà en cours sur cette session — annulez-le d'abord.".into(),
+            );
         }
 
         let user_msg = ChatMessage {
@@ -529,6 +526,16 @@ impl SessionManager {
     }
 }
 
+/// Réinitialise `busy` à `false` à la fin de `agent_loop`, y compris en cas de
+/// panic (mode unwind). Empêche une session de rester bloquée « déjà en cours ».
+struct BusyGuard(Arc<SessionInner>);
+
+impl Drop for BusyGuard {
+    fn drop(&mut self) {
+        self.0.busy.store(false, Ordering::SeqCst);
+    }
+}
+
 /// Boucle d'agent : LLM stream → tool calls → permission → exec → re-LLM.
 async fn agent_loop(
     app: AppHandle,
@@ -536,6 +543,8 @@ async fn agent_loop(
     session: Arc<SessionInner>,
     cancel: CancellationToken,
 ) {
+    // Libère `busy` à la sortie (return normal, break ou panic).
+    let _busy_guard = BusyGuard(Arc::clone(&session));
     let workspace = canonicalize_workspace(&session.info.workspace);
     let session_id = session.info.id.clone();
     let specs = session.tools.specs();
@@ -556,8 +565,6 @@ async fn agent_loop(
                         .into(),
             },
         );
-        let mut busy = session.busy.lock().await;
-        *busy = false;
         return;
     }
 
@@ -731,7 +738,6 @@ async fn agent_loop(
         // Exécute séquentiellement les tool calls (V1, pas de parallélisme).
         // Pour chaque : demande permission → exécute → émet event →
         // ajoute message `tool` au contexte.
-        let mut denied_any = false;
         for tc in tool_calls {
             if cancel.is_cancelled() {
                 break;
@@ -746,7 +752,6 @@ async fn agent_loop(
                 )
                 .await;
             if decision == Decision::Deny {
-                denied_any = true;
                 let _ = app.emit(
                     "session:tool_result",
                     ToolResultEvent {
@@ -812,14 +817,9 @@ async fn agent_loop(
         }
 
         // La boucle remonte et renvoie le contexte mis à jour au LLM.
-        let _ = denied_any;
     }
 
-    {
-        let mut busy = session.busy.lock().await;
-        *busy = false;
-        tracing::info!("Session {} libérée (busy=false)", session_id);
-    }
+    tracing::info!("Session {} terminée", session_id);
 
     tracing::info!("Émission de session:done pour session {}", session_id);
     let _ = app.emit(

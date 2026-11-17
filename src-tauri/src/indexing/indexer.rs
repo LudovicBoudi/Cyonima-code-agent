@@ -62,9 +62,9 @@ pub fn walk_workspace(root: &Path, ignore_patterns: &[&str]) -> Vec<PathBuf> {
         let name = e.file_name().to_string_lossy();
         // Ignorer les répertoires cachés et binaires.
         !name.starts_with('.')
-            && !name.starts_with("node_modules")
-            && !name.starts_with("target")
-            && !name.starts_with("dist")
+            && name != "node_modules"
+            && name != "target"
+            && name != "dist"
             && !ignore_patterns.iter().any(|p| name.contains(p))
     });
 
@@ -245,7 +245,7 @@ fn floats_to_blob(v: &[f32]) -> Vec<u8> {
 
 /// Convertit un blob SQLite en vecteur f32.
 pub fn blob_to_floats(blob: &[u8]) -> Vec<f32> {
-    blob.chunks(4)
+    blob.chunks_exact(4)
         .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
         .collect()
 }

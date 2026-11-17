@@ -29,7 +29,7 @@ impl Tool for Grep {
                 "type": "object",
                 "properties": {
                     "pattern": { "type": "string", "description": "Regex à chercher" },
-                    "include": { "type": "string", "description": "Pattern glob de fichiers à inclure (ex: *.rs)" },
+                    "include": { "type": "string", "description": "Regex appliquée au NOM de fichier pour filtrer (ex: \\.rs$)" },
                     "max": { "type": "integer", "description": "Nombre max de matches (défaut 50)" }
                 },
                 "required": ["pattern"]

@@ -10,6 +10,11 @@ export interface SessionId {
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
+  // Champs optionnels renvoyés par `session_history` (sérialisation Rust
+  // en snake_case — `ChatMessage` n'a pas de rename_all).
+  tool_call_id?: string;
+  tool_name?: string;
+  tool_calls?: Array<{ id: string; tool: string; arguments: unknown }>;
 }
 
 export interface SessionInfo {

@@ -389,6 +389,17 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
         toolCalls: { ...st.toolCalls, [forked.id]: [] },
         streaming: { ...st.streaming, [forked.id]: false },
         errors: { ...st.errors, [forked.id]: null },
+        thinking: { ...st.thinking, [forked.id]: "" },
+        modelLoading: { ...st.modelLoading, [forked.id]: false },
+        modelLoadingProgress: { ...st.modelLoadingProgress, [forked.id]: 0 },
+        selectedModels: {
+          ...st.selectedModels,
+          [forked.id]: st.selectedModels[sessionId] ?? "",
+        },
+        reasoningLevels: {
+          ...st.reasoningLevels,
+          [forked.id]: st.reasoningLevels[sessionId] ?? "auto",
+        },
       }));
       await get().restoreMessages(forked.id);
     } catch (e) {

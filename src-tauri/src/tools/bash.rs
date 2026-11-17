@@ -88,11 +88,8 @@ impl Tool for Bash {
             Err(e) => return ToolOutput::err("bash", format!("échec spawn: {e}")),
         };
 
-        match tokio::time::timeout(
-            Duration::from_secs(timeout_secs),
-            child.wait_with_output(),
-        )
-        .await
+        match tokio::time::timeout(Duration::from_secs(timeout_secs), child.wait_with_output())
+            .await
         {
             Ok(Ok(out)) => {
                 let stdout = String::from_utf8_lossy(&out.stdout).to_string();
@@ -111,7 +108,9 @@ impl Tool for Bash {
             Ok(Err(e)) => ToolOutput::err("bash", format!("échec wait: {e}")),
             Err(_) => ToolOutput::err(
                 "bash",
-                format!("commande interrompue après {timeout_secs}s (timeout dépassé, process tué)"),
+                format!(
+                    "commande interrompue après {timeout_secs}s (timeout dépassé, process tué)"
+                ),
             ),
         }
     }
