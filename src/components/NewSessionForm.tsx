@@ -7,9 +7,10 @@ export function NewSessionForm({
   onCreate,
   onCancel,
 }: {
-  onCreate: (p: { workspace: string }) => void;
+  onCreate: (p: { workspace: string; name?: string }) => void;
   onCancel: () => void;
 }) {
+  const [name, setName] = useState("");
   const [workspace, setWorkspace] = useState(".");
   const [hwInfo, setHwInfo] = useState<{
     totalRamGb: number;
@@ -30,7 +31,10 @@ export function NewSessionForm({
   };
 
   const submit = () => {
-    onCreate({ workspace: workspace.trim() || "." });
+    onCreate({
+      workspace: workspace.trim() || ".",
+      name: name.trim() || undefined,
+    });
   };
 
   return (
@@ -44,6 +48,18 @@ export function NewSessionForm({
             {hwInfo.vramGb > 0 && ` + ${hwInfo.vramGb} Go VRAM`}
           </p>
         )}
+
+        {/* Nom de la session */}
+        <label className="mb-1 block text-xs text-muted">Nom de la session</label>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submit();
+          }}
+          className="mb-4 w-full rounded border border-border bg-surface px-2 py-1.5 text-sm"
+          placeholder="ex : Refactor panier, Fix CI… (optionnel)"
+        />
 
         {/* Workspace */}
         <label className="mb-1 block text-xs text-muted">Répertoire de travail</label>

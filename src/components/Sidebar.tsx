@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import { useSessionsStore } from "../store/sessions";
 import { Plus, Terminal, BookOpen, X, GitFork, Upload, Key, Server, Settings, Search, MessageSquare } from "lucide-react";
 
@@ -19,8 +20,30 @@ export function Sidebar({
   view: View;
   onView: (v: View) => void;
 }) {
-  const { sessions, activeSessionId, setActive, startCreating, deleteSession, forkSession } =
-    useSessionsStore();
+  const {
+    sessions,
+    activeSessionId,
+    setActive,
+    startCreating,
+    deleteSession,
+    forkSession,
+    renameSession,
+  } = useSessionsStore();
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const cancelEditRef = useRef(false);
+
+  const startEdit = (id: string, current: string | null | undefined) => {
+    cancelEditRef.current = false;
+    setEditingId(id);
+    setEditValue(current ?? "");
+  };
+  const commitEdit = (id: string) => {
+    const value = editValue.trim();
+    void renameSession(id, value || null);
+    setEditingId(null);
+  };
 
   return (
     <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-bg">
@@ -67,6 +90,11 @@ export function Sidebar({
             )}
             {sessions.map((s) => {
               const active = s.id === activeSessionId;
+              const customName = s.name?.trim();
+              const providerLabel = PROVIDER_LABEL[s.providerId] ?? s.providerId;
+              const title = customName || s.modelId || "Nouvelle session";
+              const subtitle =
+                customName && s.modelId ? `${s.modelId} · ${providerLabel}` : providerLabel;
               return (
                 <div
                   key={s.id}
@@ -74,15 +102,42 @@ export function Sidebar({
                     active ? "bg-accent/20" : "hover:bg-border/40"
                   }`}
                 >
-                  <button
-                    onClick={() => setActive(s.id)}
-                    className="w-full px-2 py-2 text-left text-xs"
-                  >
-                    <div className="truncate font-medium text-fg">{s.modelId}</div>
-                    <div className="truncate text-muted">
-                      {PROVIDER_LABEL[s.providerId] ?? s.providerId}
-                    </div>
-                  </button>
+                  {editingId === s.id ? (
+                    <input
+                      autoFocus
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          (e.target as HTMLInputElement).blur();
+                        } else if (e.key === "Escape") {
+                          cancelEditRef.current = true;
+                          setEditingId(null);
+                        }
+                      }}
+                      onBlur={() => {
+                        if (cancelEditRef.current) {
+                          cancelEditRef.current = false;
+                          setEditingId(null);
+                          return;
+                        }
+                        commitEdit(s.id);
+                      }}
+                      placeholder="Nom de la session"
+                      className="w-full rounded border border-accent bg-bg px-2 py-2 text-xs text-fg focus:outline-none"
+                    />
+                  ) : (
+                    <button
+                      onClick={() => setActive(s.id)}
+                      onDoubleClick={() => startEdit(s.id, s.name)}
+                      title="Double-clic pour renommer"
+                      className="w-full px-2 py-2 text-left text-xs"
+                    >
+                      <div className="truncate font-medium text-fg">{title}</div>
+                      <div className="truncate text-muted">{subtitle}</div>
+                    </button>
+                  )}
                   <div className="absolute right-0 top-0 hidden group-hover:flex gap-1 pr-2 pt-1">
                     <button
                       onClick={(e) => {

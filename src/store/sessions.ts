@@ -48,7 +48,7 @@ interface SessionsState {
 
   startCreating: () => void;
   cancelCreating: () => void;
-  createSession: (p: { workspace: string }) => Promise<void>;
+  createSession: (p: { workspace: string; name?: string }) => Promise<void>;
 
   /// Charge la liste des modèles installés dans Ollama.
   loadInstalledOllamaModels: () => Promise<void>;
@@ -63,6 +63,7 @@ interface SessionsState {
 
   setActive: (id: string | null) => void;
   deleteSession: (sessionId: string) => Promise<void>;
+  renameSession: (sessionId: string, name: string | null) => Promise<void>;
   appendMessage: (sessionId: string, msg: ChatMessage) => void;
   appendToken: (sessionId: string, token: string) => void;
   appendThinking: (sessionId: string, token: string) => void;
@@ -201,10 +202,15 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   startCreating: () => set({ creating: true }),
   cancelCreating: () => set({ creating: false }),
 
-  createSession: async ({ workspace }) => {
+  createSession: async ({ workspace, name }) => {
     // Provider Ollama unique ; le modèle est choisi ensuite via le menu
     // déroulant du chat (créé vide côté backend).
-    const info = await ipc.sessionCreate({ workspace, modelId: "", providerId: "ollama" });
+    const info = await ipc.sessionCreate({
+      workspace,
+      modelId: "",
+      providerId: "ollama",
+      name: name?.trim() || undefined,
+    });
     // Pré-sélectionne le premier modèle Ollama installé, s'il y en a.
     const firstModel = get().installedOllamaModels[0]?.name ?? "";
     set((st) => ({
@@ -271,6 +277,19 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       }
       return { sessions, messages, toolCalls, streaming, errors, activeSessionId };
     });
+  },
+
+  renameSession: async (sessionId, name) => {
+    try {
+      const info = await ipc.sessionRename({ sessionId, name });
+      set((st) => ({
+        sessions: st.sessions.map((s) =>
+          s.id === sessionId ? { ...s, name: info.name } : s,
+        ),
+      }));
+    } catch (e) {
+      console.error("sessionRename error", e);
+    }
   },
 
   appendMessage: (sessionId, msg) =>

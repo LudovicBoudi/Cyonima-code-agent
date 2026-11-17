@@ -51,6 +51,7 @@ pub fn run() {
             ipc::session_cancel,
             ipc::session_fork,
             ipc::session_delete,
+            ipc::session_rename,
             ipc::session_history,
             ipc::session_list,
             ipc::model_list_installed,

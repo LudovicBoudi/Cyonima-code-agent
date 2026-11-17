@@ -23,6 +23,7 @@ export interface SessionInfo {
   modelId: string;
   providerId: string;
   createdAt: number;
+  name?: string | null;
 }
 
 export interface ModelInfo {
@@ -110,8 +111,12 @@ export interface GitStatus {
 // ===== Commands =====
 
 export const ipc = {
-  sessionCreate: (p: { workspace: string; modelId: string; providerId: string }) =>
-    invoke<SessionInfo>("session_create", p),
+  sessionCreate: (p: {
+    workspace: string;
+    modelId: string;
+    providerId: string;
+    name?: string;
+  }) => invoke<SessionInfo>("session_create", p),
   sessionSend: (p: { sessionId: string; message: string; model?: string; reasoning?: string }) =>
     invoke<void>("session_send", p),
   sessionCancel: (p: { sessionId: string }) => invoke<void>("session_cancel", p),
@@ -119,6 +124,8 @@ export const ipc = {
   sessionHistory: (p: { sessionId: string }) =>
     invoke<ChatMessage[]>("session_history", p),
   sessionDelete: (p: { sessionId: string }) => invoke<void>("session_delete", p),
+  sessionRename: (p: { sessionId: string; name: string | null }) =>
+    invoke<SessionInfo>("session_rename", p),
   sessionList: () => invoke<SessionInfo[]>("session_list"),
 
   modelListInstalled: () => invoke<ModelInfo[]>("model_list_installed"),

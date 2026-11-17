@@ -89,6 +89,8 @@ pub struct SessionInfo {
     /// Backend utilisé pour ce modèle.
     pub provider_id: ProviderKind,
     pub created_at: DateTime<Utc>,
+    /// Nom lisible donné par l'utilisateur à la création (optionnel).
+    pub name: Option<String>,
 }
 
 impl SessionInfo {
@@ -103,6 +105,7 @@ impl SessionInfo {
             model_id: model_id.into(),
             provider_id,
             created_at: Utc::now(),
+            name: None,
         }
     }
 }
@@ -126,6 +129,8 @@ pub struct SessionInner {
     pub cancel: Mutex<CancellationToken>,
     /// `true` si un stream est en cours — protège contre les envois concurrents.
     pub busy: AtomicBool,
+    /// Nom lisible courant (source de vérité pour le renommage à chaud).
+    pub name: std::sync::Mutex<Option<String>>,
     /// Snapshot optionnel de la persistence pour flusher les messages
     /// au fil de l'eau (None pour les tests unitaires sans DB).
     persistence: Option<persistence::Persistence>,
@@ -272,6 +277,7 @@ impl SessionManager {
                 current_reasoning: Mutex::new("auto".to_string()),
                 cancel: Mutex::new(CancellationToken::new()),
                 busy: AtomicBool::new(false),
+                name: std::sync::Mutex::new(info.name.clone()),
                 persistence: self.persistence.clone(),
             });
             self.sessions.insert(info.id.clone(), inner);
@@ -288,13 +294,16 @@ impl SessionManager {
         model_id: String,
         provider_kind: ProviderKind,
         endpoint: Option<String>,
+        name: Option<String>,
     ) -> SessionInfo {
         let provider = providers::build(providers::ProviderParams {
             kind: provider_kind,
             endpoint,
             api_key: None,
         });
-        let info = SessionInfo::new(workspace.clone(), model_id, provider_kind);
+        let mut info = SessionInfo::new(workspace.clone(), model_id, provider_kind);
+        // Normalise le nom : trim + vide → None.
+        info.name = name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
         let abs_workspace = canonicalize_workspace(&workspace);
         let mut initial_messages: Vec<ChatMessage> = Vec::new();
 
@@ -350,6 +359,7 @@ impl SessionManager {
             current_reasoning: Mutex::new("auto".to_string()),
             cancel: Mutex::new(CancellationToken::new()),
             busy: AtomicBool::new(false),
+            name: std::sync::Mutex::new(info.name.clone()),
             persistence: self.persistence.clone(),
         });
         self.sessions.insert(info.id.clone(), inner);
@@ -360,7 +370,14 @@ impl SessionManager {
     /// Liste les sessions — lit depuis le cache in-memory (qui est toujours
     /// synchronisé avec la DB, car `restore_all` est appelée au démarrage).
     pub fn list(&self) -> Vec<SessionInfo> {
-        self.sessions.iter().map(|e| e.info.clone()).collect()
+        self.sessions
+            .iter()
+            .map(|e| {
+                let mut info = e.info.clone();
+                info.name = e.name.lock().map(|g| g.clone()).unwrap_or(None);
+                info
+            })
+            .collect()
     }
 
     pub fn get(&self, id: &str) -> Option<Arc<SessionInner>> {
@@ -382,11 +399,13 @@ impl SessionManager {
     /// `CancellationToken`. En J2 **persiste** aussi les messages.
     pub async fn fork(&self, gateway: Arc<Gateway>, id: &str) -> Option<SessionInfo> {
         let src = self.get(id)?;
-        let forked = SessionInfo::new(
+        let forked_name = src.name.lock().map(|g| g.clone()).unwrap_or(None);
+        let mut forked = SessionInfo::new(
             src.info.workspace.clone(),
             src.info.model_id.clone(),
             src.info.provider_id,
         );
+        forked.name = forked_name.clone();
         let provider = src.provider.clone();
         let tools = src.tools.clone();
         let messages = src.messages.lock().await.clone();
@@ -419,11 +438,36 @@ impl SessionManager {
             current_reasoning: Mutex::new(current_reasoning),
             cancel: Mutex::new(CancellationToken::new()),
             busy: AtomicBool::new(false),
+            name: std::sync::Mutex::new(forked_name),
             persistence: src.persistence.clone(),
         });
         self.sessions.insert(forked.id.clone(), inner);
         let _ = gateway;
         Some(forked)
+    }
+
+    /// Renomme une session (nom lisible optionnel) et persiste le changement.
+    /// `None` ou une chaîne vide efface le nom (retour au `modelId` côté UI).
+    pub async fn rename(
+        &self,
+        session_id: &str,
+        name: Option<String>,
+    ) -> Result<SessionInfo, String> {
+        let session = self
+            .get(session_id)
+            .ok_or_else(|| format!("Session '{session_id}' introuvable"))?;
+        let normalized = name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
+        if let Ok(mut guard) = session.name.lock() {
+            *guard = normalized.clone();
+        }
+        if let Some(p) = &session.persistence {
+            p.set_session_title(session_id, normalized.as_deref())
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        let mut info = session.info.clone();
+        info.name = normalized;
+        Ok(info)
     }
 
     /// Envoie un message utilisateur et lance la boucle d'agent.

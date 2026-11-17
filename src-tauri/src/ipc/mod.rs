@@ -53,6 +53,7 @@ pub async fn session_create(
     workspace: String,
     model_id: String,
     provider_id: ProviderKind,
+    name: Option<String>,
 ) -> Result<SessionInfo, String> {
     Ok(state
         .sessions
@@ -62,6 +63,7 @@ pub async fn session_create(
             model_id,
             provider_id,
             None,
+            name,
         )
         .await)
 }
@@ -108,6 +110,16 @@ pub async fn session_fork(
 #[tauri::command]
 pub async fn session_delete(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
     state.sessions.delete(&session_id).await
+}
+
+/// Renomme une session (nom optionnel ; `null`/vide efface le nom).
+#[tauri::command]
+pub async fn session_rename(
+    state: State<'_, AppState>,
+    session_id: String,
+    name: Option<String>,
+) -> Result<SessionInfo, String> {
+    state.sessions.rename(&session_id, name).await
 }
 
 /// Récupère l'historique complet d'une session (utile pour restaurer l'UI au

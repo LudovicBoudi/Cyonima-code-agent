@@ -136,12 +136,13 @@ impl Persistence {
     pub async fn upsert_session(&self, info: &SessionInfo) -> anyhow::Result<()> {
         sqlx::query(
             r#"
-            INSERT INTO sessions (id, workspace, model_id, provider_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO sessions (id, workspace, model_id, provider_id, created_at, title, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 workspace = excluded.workspace,
                 model_id = excluded.model_id,
                 provider_id = excluded.provider_id,
+                title = excluded.title,
                 updated_at = excluded.updated_at
             "#,
         )
@@ -150,14 +151,15 @@ impl Persistence {
         .bind(&info.model_id)
         .bind(info.provider_id.as_str())
         .bind(info.created_at.to_rfc3339())
+        .bind(&info.name)
         .bind(Utc::now().to_rfc3339())
         .execute(&self.pool)
         .await?;
         Ok(())
     }
 
-    /// Met à jour le titre optionnel d'une session (pour affichage UI plus parlant).
-    pub async fn set_session_title(&self, id: &str, title: &str) -> anyhow::Result<()> {
+    /// Met à jour (ou efface si `None`) le titre d'une session.
+    pub async fn set_session_title(&self, id: &str, title: Option<&str>) -> anyhow::Result<()> {
         sqlx::query("UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?")
             .bind(title)
             .bind(Utc::now().to_rfc3339())
@@ -171,7 +173,7 @@ impl Persistence {
     /// démarrage de l'app pour restaurer la sidebar.
     pub async fn list_sessions(&self) -> anyhow::Result<Vec<SessionInfo>> {
         let rows = sqlx::query(
-            "SELECT id, workspace, model_id, provider_id, created_at FROM sessions ORDER BY datetime(updated_at) DESC",
+            "SELECT id, workspace, model_id, provider_id, created_at, title FROM sessions ORDER BY datetime(updated_at) DESC",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -182,6 +184,7 @@ impl Persistence {
             let model_id: String = r.try_get("model_id")?;
             let provider_id_str: String = r.try_get("provider_id")?;
             let created_at_str: String = r.try_get("created_at")?;
+            let name: Option<String> = r.try_get("title")?;
             let created_at = DateTime::parse_from_rfc3339(&created_at_str)
                 .map(|dt| dt.with_timezone(&Utc))
                 .unwrap_or_else(|_| Utc::now());
@@ -200,6 +203,7 @@ impl Persistence {
                 model_id,
                 provider_id,
                 created_at,
+                name,
             });
         }
         Ok(out)
@@ -414,7 +418,9 @@ mod tests {
         let s = info();
         p.upsert_session(&s).await.unwrap();
         assert_eq!(p.session_title(&s.id).await.unwrap(), None);
-        p.set_session_title(&s.id, "Тest Titre").await.unwrap();
+        p.set_session_title(&s.id, Some("Тest Titre"))
+            .await
+            .unwrap();
         assert_eq!(
             p.session_title(&s.id).await.unwrap().as_deref(),
             Some("Тest Titre")
