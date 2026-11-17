@@ -10,6 +10,30 @@
   --color-accent: #a855f7;  /* violet vif (actions, focus) */
   --color-border: #332049;  /* bordures teintées violet */
   --color-surface: #1e1233; /* panneaux / champs surélevés */
+  /* Indique au webview que l'UI est sombre : les widgets natifs (popup des
+     <select>, scrollbars, etc.) sont rendus en sombre → plus de blanc sur blanc. */
+  color-scheme: dark;
+}
+
+/* Menus déroulants natifs : le popup des <option> ne suit pas le thème par
+   défaut selon le webview. On force fond sombre + texte clair. */
+select,
+option,
+optgroup {
+  color-scheme: dark;
+}
+
+option,
+optgroup {
+  background-color: var(--color-surface);
+  color: var(--color-fg);
+}
+
+/* Option sélectionnée/survolée dans le popup (WebKit/Chromium). */
+option:checked,
+option:hover {
+  background-color: color-mix(in srgb, var(--color-accent) 35%, var(--color-surface));
+  color: var(--color-fg);
 }
 
 html,
